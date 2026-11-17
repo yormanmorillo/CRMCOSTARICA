@@ -1,0 +1,32 @@
+{
+  "name": "pulso-crm",
+  "version": "1.0.0",
+  "description": "Pulso CRM con Chatwoot",
+  "main": "index.js",
+  "scripts": {
+    "test": "node scripts/test.mjs",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "predev": "node scripts/build-ui.mjs",
+    "prebuild": "node scripts/build-ui.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "private": "true",
+  "dependencies": {
+    "jose": "^6.2.17",
+    "next": "^16.4.6",
+    "pg": "^8.23.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.16",
+    "@types/node": "^26.6.6",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.3.0",
+    "typescript": "^5.9.3"
+  }
+}
