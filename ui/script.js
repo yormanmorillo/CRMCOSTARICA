@@ -46,23 +46,31 @@ function hora(isoStr){
 }
 
 /* ---------- Conexión con el servidor ---------- */
+var can=function(p){return S.me.rol==='admin'||((S.me.permisos||[]).indexOf(p)>=0)};
+function postTarea(d){
+  return api('POST','/tareas',d).catch(function(e){
+    if(e&&e.data&&e.data.fueraDeHorario&&confirm(e.message+'\n\n¿Programarla de todos modos?'))return api('POST','/tareas',Object.assign({forzar:true},d));
+    throw e;
+  });
+}
 function api(method,path,data){
   var o={method:method,headers:{},credentials:'same-origin'};
   if(data!==undefined){o.headers['content-type']='application/json';o.body=JSON.stringify(data)}
   return fetch('/api'+path,o).catch(function(){throw new Error('No hay conexión con el servidor')}).then(function(r){
     if(r.status===401){location.href='/login';throw new Error('Tu sesión venció. Entra de nuevo.')}
     return r.json().catch(function(){return {}}).then(function(j){
-      if(!r.ok)throw new Error(j.error||('Error '+r.status));
+      if(!r.ok){var er=new Error(j.error||('Error '+r.status));er.data=j;er.status=r.status;throw er}
       return j;
     });
   });
 }
 function fail(e){toast(e&&e.message?e.message:'Algo salió mal')}
 
-var S={leads:[],tasks:[],etapas:[],motivos:[],productos:[],usuarios:[],settings:{negocio:'Pulso CRM',avisoDias:5},me:{nombre:'',rol:'vendedor'},licencia:{estado:'sin_sistema',puedeEscribir:true},chatwoot:{configurado:false,activo:false},whatsapp:{configurado:false,activo:true},meta:{configurado:false,activo:true},web:{activo:true},correo:{configurado:false,activo:true}};
+var S={leads:[],tasks:[],etapas:[],motivos:[],productos:[],usuarios:[],settings:{negocio:'Pulso CRM',avisoDias:5},me:{nombre:'',rol:'vendedor'},licencia:{estado:'sin_sistema',puedeEscribir:true},chatwoot:{configurado:false,activo:false},whatsapp:{configurado:false,activo:true},meta:{configurado:false,activo:true},web:{activo:true},categorias:[],correo:{configurado:false,activo:true}};
 var lead=function(id){return S.leads.filter(function(l){return l.id===id})[0]};
 function put(l){var i=S.leads.findIndex(function(x){return x.id===l.id});if(i>-1)S.leads[i]=l;else S.leads.unshift(l)}
-var activo=function(l){var t=tipoE(l.etapa);return t!=='ganada'&&t!=='perdida'};
+var activo=function(l){var t=tipoE(l.etapa);return t!=='ganada'&&t!=='perdida'&&t!=='pausada'};
+var esPausa=function(l){return tipoE(l.etapa)==='pausada'};
 var esPerdido=function(l){return tipoE(l.etapa)==='perdida'};
 var esInicial=function(l){return tipoE(l.etapa)==='inicial'};
 var nombreUsr=function(id){var u=S.usuarios.filter(function(x){return x.id===id})[0];return u?u.nombre:''};
@@ -445,7 +453,7 @@ function openLead(id){
       '<div id="drTasks"></div></section>'+
     '<section id="sec-act"><h3>Línea de tiempo</h3><div id="drAct"></div></section>'+
     '</div>'+
-    '<section id="sec-del"><button class="btn danger" type="button" data-action="del-lead">Eliminar este lead</button></section>';
+    (can('eliminar_leads')?'<section id="sec-del"><button class="btn danger" type="button" data-action="del-lead">Eliminar este lead</button></section>':'');
   renderDrHead();renderDrData();renderDrTags();renderDrProd();renderDrRem();renderDrAtt();renderDrNotas();renderDrTasks();renderDrFiles();renderDrAct();renderDrRoad();
   showOv('drawerOv');
   $('#drBody').scrollTop=0;
@@ -466,7 +474,7 @@ function renderDrHead(){
   var l=lead(openId);if(!l)return;
   var w=waHref(l),perd=esPerdido(l),gan=tipoE(l.etapa)==='ganada';
   var banner=perd?'<div class="banner" style="margin:0 20px 12px"><span><b>'+esc(etapaLabel(l.etapa))+'</b>'+(l.motivo?': '+esc(l.motivo):' (sin motivo registrado)')+(l.motivoNota?' — '+esc(l.motivoNota):'')+'</span>'+(S.motivos.length?'<button class="btn sm" data-action="motivo-edit">'+(l.motivo?'Cambiar motivo':'Elegir motivo')+'</button>':'')+'</div>':
-    (gan?'<div class="banner ok" style="margin:0 20px 12px"><span><b>'+esc(etapaLabel(l.etapa))+'</b>'+(money(l.valor)?' · '+esc(money(l.valor)):'')+'</span></div>':'');
+    (gan?'<div class="banner ok" style="margin:0 20px 12px"><span><b>'+esc(etapaLabel(l.etapa))+'</b>'+(money(l.valor)?' · '+esc(money(l.valor)):'')+'</span></div>':(esPausa(l)?'<div class="banner" style="margin:0 20px 12px"><span><b>'+esc(etapaLabel(l.etapa))+'</b>: el lead está en pausa; no genera avisos hasta que lo muevas de etapa.</span></div>':''));
   $('#drHead').innerHTML='<div class="dr-top"><span class="av lg">'+esc(ini(l.nombre))+'</span><div class="id"><h2 id="drTitle">'+esc(l.nombre||'Sin nombre')+'</h2><div class="chips">'+canalChip(l.canal)+tipoTag(l)+autoTag(l)+(l.empresa?'<span class="tag">'+esc(l.empresa)+'</span>':'')+'</div></div>'+
       '<button class="starbtn'+(l.destacado?' on':'')+'" data-action="star" aria-pressed="'+l.destacado+'" aria-label="'+(l.destacado?'Quitar de destacados':'Destacar lead')+'" title="Destacar">'+(l.destacado?'★':'☆')+'</button>'+
       '<button class="btn sm" data-action="close-drawer">Cerrar</button></div>'+
@@ -490,7 +498,11 @@ function renderDrProd(){
       '<input class="in" type="number" min="0" step="any" value="'+it.precio+'" data-lpp="'+it.id+'" aria-label="Precio de '+esc(it.nombre)+'">'+
       '<button class="x" data-action="prod-del" data-id="'+it.id+'" aria-label="Quitar '+esc(it.nombre)+'">Quitar</button></div>';
   }).join('')+'<div class="total">'+Object.keys(tot).map(function(m){return '<span>Total '+esc(fm(m,tot[m]))+'</span>'}).join('')+'</div></div>':'<p class="muted" style="margin:0 0 12px">Todavía no hay productos en este lead.</p>';
-  var cat=S.productos.map(function(p){return '<option value="'+p.id+'">'+esc(p.nombre+' · '+(p.moneda==='USD'?USD(p.precio):CRC(p.precio)))+'</option>'}).join('');
+  var optP=function(p){return '<option value="'+p.id+'">'+esc(p.nombre+' · '+(p.moneda==='USD'?USD(p.precio):CRC(p.precio)))+'</option>'};
+  var CATS=S.categorias||[];
+  var cat=CATS.map(function(c){var ps=S.productos.filter(function(p){return p.categoriaId===c.id});return ps.length?'<optgroup label="'+esc(c.nombre)+'">'+ps.map(optP).join('')+'</optgroup>':''}).join('');
+  var sinCat=S.productos.filter(function(p){return !CATS.some(function(c){return c.id===p.categoriaId})});
+  cat+=sinCat.length?(CATS.length?'<optgroup label="Sin categoría">':'')+sinCat.map(optP).join('')+(CATS.length?'</optgroup>':''):'';
   var ayuda=S.productos.length?'':'<div class="prodhelp"><span>Todavía no hay productos en el catálogo. Puedes escribir uno a mano abajo'+(S.me.rol==='admin'?', o crear tu catálogo para elegirlo con un clic.':'. Pídele al administrador que cree el catálogo.')+'</span>'+(S.me.rol==='admin'?'<button class="btn sm" type="button" data-action="adm-go" data-sec="productos">Crear productos</button>':'')+'</div>';
   el.innerHTML=lista+ayuda+'<form class="fg" data-form="prod">'+
     '<label class="fl full">Producto del catálogo<select class="in" id="prodSel" name="productoId"><option value="">Otro (escribe el nombre abajo)</option>'+cat+'</select></label>'+
@@ -510,7 +522,7 @@ function renderDrNotas(){
 var ACT_T={creado:'Creado',etapa:'Etapa',ganado:'Ganado',perdido:'Perdido',nota:'Nota',producto:'Producto',atencion:'Atención',asignado:'Asignación',mensaje:'Mensaje'};
 function roadPasos(l){
   var perd=esPerdido(l);
-  var pasos=ETAPAS.filter(function(e){return e.tipo!=='perdida'&&!(perd&&e.tipo==='ganada')});
+  var pasos=ETAPAS.filter(function(e){return e.tipo!=='perdida'&&e.tipo!=='pausada'&&!(perd&&e.tipo==='ganada')});
   if(perd){var pe=ETAPAS.filter(function(e){return e.clave===l.etapa})[0];if(pe)pasos.push(pe)}
   return pasos;
 }
@@ -524,6 +536,8 @@ function roadInfo(l){
     o.ms+=Math.max(0,fin-ini);
   });
   var cur=0;pasos.forEach(function(e,i){if(e.clave===l.etapa)cur=i});
+  // En pausa: el avance queda en la última etapa del embudo que visitó.
+  if(esPausa(l))h.forEach(function(r){pasos.forEach(function(e,i){if(e.clave===r.etapa&&i>cur)cur=i})});
   return {pasos:pasos,info:info,cur:cur};
 }
 function renderDrRoad(){
@@ -826,7 +840,7 @@ document.addEventListener('change',function(e){
     $$('#newForm [data-for]').forEach(function(g){g.hidden=g.dataset.for!==el.value});return;
   }
   if(el.dataset&&el.dataset.s){
-    var body={};body[el.dataset.s==='avisoDias'?'avisoDias':'negocio']=el.value;
+    var body={};body[el.dataset.s]=el.value;
     api('PATCH','/ajustes',body).then(function(r){S.settings=r.settings;applyBrand();toast('Ajuste guardado')}).catch(fail);
     return;
   }
@@ -874,12 +888,12 @@ document.addEventListener('submit',function(e){
     }).catch(fail).then(done);
   }
   if(kind==='task-lead'){
-    api('POST','/tareas',{leadId:openId,titulo:g('titulo'),fecha:g('fecha'),hora:g('hora')}).then(function(r){
+    postTarea({leadId:openId,titulo:g('titulo'),fecha:g('fecha'),hora:g('hora')}).then(function(r){
       S.tasks.push(r.tarea);f.reset();$('#tkFecha').value=addDays(today(),1);refresh();toast('Tarea agregada al calendario');
     }).catch(fail).then(done);
   }
   if(kind==='task-cal'){
-    api('POST','/tareas',{leadId:g('leadId'),titulo:g('titulo'),fecha:g('fecha'),hora:g('hora')}).then(function(r){
+    postTarea({leadId:g('leadId'),titulo:g('titulo'),fecha:g('fecha'),hora:g('hora')}).then(function(r){
       S.tasks.push(r.tarea);C.sel=r.tarea.fecha;var d=parse(C.sel);C.y=d.getFullYear();C.m=d.getMonth();refresh();toast('Tarea agregada');
     }).catch(fail).then(done);
   }
@@ -943,7 +957,7 @@ window.addEventListener('hashchange',function(){setView(location.hash.slice(1))}
 function applyState(st,quiet){
   var known={};S.leads.forEach(function(l){known[l.id]=1});
   var nuevos=loaded&&quiet?st.leads.filter(function(l){return !known[l.id]&&l.auto}):[];
-  var s=JSON.stringify([st.leads,st.tasks,st.settings,st.chatwoot,st.whatsapp,st.meta,st.web,st.etapas,st.motivos,st.productos,st.usuarios,st.licencia]);
+  var s=JSON.stringify([st.leads,st.tasks,st.settings,st.chatwoot,st.whatsapp,st.meta,st.web,st.etapas,st.motivos,st.productos,st.categorias,st.me,st.usuarios,st.licencia]);
   var changed=s!==sig;
   sig=s;
   S=st;ETAPAS=st.etapas||[];

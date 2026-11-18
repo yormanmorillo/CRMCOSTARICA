@@ -564,6 +564,73 @@ const msg = (o) => ({
     ok(pg.status === 200 && /Simulador de canales/.test(await pg.text()), 'la página /demo se sirve a quien inició sesión');
     ok((await fetch(BASE + '/demo', { redirect: 'manual' })).status === 302, '/demo sin iniciar sesión redirige al login');
   }
+  {
+    console.log('Roles, PIN y horario');
+    const R = (await call('GET', '/api/roles')).json;
+    ok(R.roles.some((r) => r.id === 'admin') && R.roles.some((r) => r.id === 'vendedor') && R.permisos.length >= 3, 'existen los roles Administrador y Vendedor y la lista de permisos');
+    const rc = await call('POST', '/api/roles', { nombre: 'Recepción', permisos: ['reportes', 'inventado'] });
+    ok(rc.status === 201, 'se crea un rol personalizado');
+    const rid = (await call('GET', '/api/roles')).json.roles.find((r) => r.nombre === 'Recepción');
+    ok(rid && rid.permisos.length === 1 && rid.permisos[0] === 'reportes', 'solo se guardan permisos válidos');
+    ok((await call('PATCH', '/api/roles/admin', { nombre: 'x' })).status === 409, 'el rol Administrador no se edita');
+    ok((await call('DELETE', '/api/roles/vendedor')).status === 409, 'el rol Vendedor no se borra');
+    const mu = await call('POST', '/api/usuarios', { nombre: 'Rita Recepción', email: 'rita@prueba.cr', password: 'clave-rita-123', rol: rid.id });
+    ok(mu.status === 201 && mu.json.usuario.rol === rid.id, 'se crea un usuario con el rol nuevo');
+    ok((await call('POST', '/api/usuarios', { nombre: 'X', email: 'x@prueba.cr', password: 'clave-xxx-123', rol: 'no-existe' })).status === 400, 'un rol inexistente se rechaza');
+    ok((await call('DELETE', `/api/roles/${rid.id}`)).status === 409, 'no se borra un rol con usuarios');
+    const uid2 = mu.json.usuario.id;
+    ok((await call('PATCH', `/api/usuarios/${uid2}`, { pin: '12' })).status === 400, 'el PIN debe tener 4 a 6 números');
+    ok((await call('PATCH', `/api/usuarios/${uid2}`, { pin: '4821' })).status === 200, 'se asigna un PIN');
+    ok((await call('GET', '/api/auth/opciones', undefined, { nocookie: true })).json.pin === true, 'la entrada con PIN está activa por defecto');
+    const lp = await call('POST', '/api/auth/pin', { email: 'rita@prueba.cr', pin: '4821' }, { nocookie: true });
+    ok(lp.status === 200 && /pulso_session/.test(lp.headers.get('set-cookie') || ''), 'entra con correo y PIN');
+    const ckR = (lp.headers.get('set-cookie') || '').split(';')[0];
+    const stR = await call('GET', '/api/state', undefined, { nocookie: true, headers: { cookie: ckR } });
+    ok(stR.status === 200 && stR.json.me.rol === rid.id && stR.json.me.permisos.join() === 'reportes', 'la sesión trae los permisos del rol');
+    const lid = stR.json.leads[0].id;
+    ok((await call('DELETE', `/api/leads/${lid}`, undefined, { nocookie: true, headers: { cookie: ckR } })).status === 403, 'sin permiso no puede eliminar leads');
+    ok((await call('GET', '/api/roles', undefined, { nocookie: true, headers: { cookie: ckR } })).status === 403, 'un rol personalizado no entra a la administración');
+    ok(stR.json.leads.length === 0 || stR.json.leads.every((l) => !l.asignado || l.asignado === stR.json.me.id), 'sin «ver todos» solo ve sus leads y los sin asignar');
+    ok((await call('PATCH', `/api/roles/${rid.id}`, { permisos: ['ver_todos', 'eliminar_leads'] })).status === 200, 'se cambian los permisos del rol');
+    await new Promise((r) => setTimeout(r, 15500));
+    const st2 = await call('GET', '/api/state', undefined, { nocookie: true, headers: { cookie: ckR } });
+    ok(st2.json.me.permisos.includes('ver_todos') && st2.json.leads.length >= stR.json.leads.length, 'los permisos nuevos se aplican en segundos, sin volver a entrar');
+    for (let i = 0; i < 5; i++) await call('POST', '/api/auth/pin', { email: 'rita@prueba.cr', pin: '0000' }, { nocookie: true });
+    ok((await call('POST', '/api/auth/pin', { email: 'rita@prueba.cr', pin: '4821' }, { nocookie: true })).status === 401, '5 PIN erróneos bloquean la cuenta 15 minutos');
+    ok((await call('POST', '/api/auth/pin', { email: 'admin@prueba.cr', pin: '1234' }, { nocookie: true })).status === 401, 'los administradores no entran con PIN');
+    ok((await call('PATCH', '/api/ajustes', { pinActivo: false })).status === 200 && (await call('POST', '/api/auth/pin', { email: 'rita@prueba.cr', pin: '4821' }, { nocookie: true })).status === 403, 'se puede apagar la entrada con PIN');
+    await call('PATCH', '/api/ajustes', { pinActivo: true });
+    const hz = await call('PATCH', '/api/ajustes', { horario: [0, 1, 2, 3, 4, 5, 6].map((d) => ({ on: d >= 1 && d <= 5, desde: '08:00', hasta: '17:00' })) });
+    ok(hz.status === 200 && hz.json.settings.horario[1].on && !hz.json.settings.horario[0].on, 'se guarda el horario de atención');
+    ok((await call('PATCH', '/api/ajustes', { horario: [0, 1, 2, 3, 4, 5, 6].map(() => ({ on: true, desde: '18:00', hasta: '09:00' })) })).status === 400, 'un horario con cierre antes de la apertura se rechaza');
+    const tOk = await call('POST', '/api/tareas', { titulo: 'Llamar (lunes 10am)', fecha: '2030-01-07', hora: '10:00' });
+    ok(tOk.status === 201, 'una tarea dentro del horario se guarda');
+    const tNo = await call('POST', '/api/tareas', { titulo: 'Llamar (domingo)', fecha: '2030-01-06', hora: '10:00' });
+    ok(tNo.status === 409 && tNo.json.fueraDeHorario && /domingo/.test(tNo.json.error), 'una tarea en día cerrado pide confirmación: ' + tNo.json.error);
+    ok((await call('POST', '/api/tareas', { titulo: 'Tarde', fecha: '2030-01-07', hora: '20:00' })).status === 409, 'una tarea fuera de hora pide confirmación');
+    ok((await call('POST', '/api/tareas', { titulo: 'Forzada', fecha: '2030-01-06', hora: '10:00', forzar: true })).status === 201, 'con confirmación se guarda igual');
+  }
+  {
+    console.log('Categorías y etapa En pausa');
+    ok((await call('POST', '/api/categorias', { nombre: 'Habitaciones' })).status === 201, 'se crea una categoría');
+    ok((await call('POST', '/api/categorias', { nombre: 'habitaciones' })).status === 409, 'no se repite el nombre de una categoría');
+    const cats = (await call('GET', '/api/productos')).json.categorias;
+    const cid = cats.find((c) => c.nombre === 'Habitaciones').id;
+    const pc = await call('POST', '/api/productos', { nombre: 'Suite doble', precio: 100, moneda: 'USD', categoriaId: cid });
+    ok(pc.status === 201 && pc.json.producto.categoriaId === cid, 'un producto se guarda con su categoría');
+    ok((await call('POST', '/api/productos', { nombre: 'Malo', categoriaId: 'zzz' })).status === 400, 'una categoría inexistente se rechaza');
+    const stc = (await call('GET', '/api/state')).json;
+    ok(stc.categorias.some((c) => c.id === cid) && stc.productos.some((p) => p.nombre === 'Suite doble' && p.categoriaId === cid), 'el estado trae categorías y productos con su categoría');
+    ok((await call('DELETE', `/api/categorias/${cid}`)).status === 200 && (await call('GET', '/api/productos')).json.productos.find((p) => p.nombre === 'Suite doble').categoriaId === '', 'al borrar una categoría los productos quedan sin categoría');
+    const ep = await call('POST', '/api/etapas', { nombre: 'En pausa', color: 'warn', tipo: 'pausada' });
+    ok(ep.status === 201 && ep.json.etapas.find((e) => e.nombre === 'En pausa').tipo === 'pausada', 'se crea una etapa de tipo En pausa');
+    const ord = ep.json.etapas.map((e) => e.tipo);
+    ok(ord.indexOf('pausada') < ord.indexOf('ganada'), 'la etapa en pausa queda antes de Ganado y Perdido');
+    const lp = (await call('POST', '/api/leads', { nombre: 'Lead en pausa', canal: 'web' })).json.lead;
+    const mv = await call('PATCH', `/api/leads/${lp.id}`, { etapa: ep.json.etapas.find((e) => e.nombre === 'En pausa').clave });
+    ok(mv.status === 200 && mv.json.lead.etapa === 'en-pausa', 'un lead se puede mover a En pausa');
+    await call('DELETE', `/api/etapas/en-pausa`);
+  }
   if (process.env.LIC_PRIV) {
     console.log('Licencia de uso');
     const { sign, createPrivateKey } = await import('node:crypto');

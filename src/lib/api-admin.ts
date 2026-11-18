@@ -43,9 +43,40 @@ route('DELETE', '/notas/:id', async ({ params, user }) => {
 });
 
 /* ---------- Catálogo de productos ---------- */
-const mapProducto = (p: any) => ({ id: p.id, nombre: p.nombre, descripcion: p.descripcion, precio: Number(p.precio), moneda: p.moneda, activo: p.activo });
+const mapProducto = (p: any) => ({ id: p.id, nombre: p.nombre, descripcion: p.descripcion, precio: Number(p.precio), moneda: p.moneda, activo: p.activo, categoriaId: p.categoria_id || '' });
 
-route('GET', '/productos', async () => json({ productos: (await q('select id, nombre, descripcion, precio, moneda, activo from productos order by nombre')).map(mapProducto) }), { admin: true });
+route('GET', '/productos', async () => json({
+  productos: (await q('select id, nombre, descripcion, precio, moneda, activo, categoria_id from productos order by nombre')).map(mapProducto),
+  categorias: await q('select c.id, c.nombre, c.orden, (select count(*) from productos p where p.categoria_id=c.id)::int as productos from categorias c order by c.orden, c.nombre'),
+}), { admin: true });
+
+/* ---------- Categorías de productos ---------- */
+const catValida = async (v: unknown) => {
+  const id = String(v || '');
+  if (!id) return null;
+  if (!(await q('select 1 from categorias where id=$1', [id])).length) throw new HttpError(400, 'Esa categoría no existe');
+  return id;
+};
+route('POST', '/categorias', async ({ req }) => {
+  const nombre = str((await body(req)).nombre, 60);
+  if (!nombre) throw new HttpError(400, 'Escribe el nombre de la categoría');
+  if ((await q('select 1 from categorias where lower(nombre)=lower($1)', [nombre])).length) throw new HttpError(409, 'Ya existe una categoría con ese nombre');
+  const max = (await q('select coalesce(max(orden),0)::int as m from categorias'))[0].m;
+  await q('insert into categorias(id, nombre, orden) values($1,$2,$3)', [uid(), nombre, max + 1]);
+  return json({ ok: true }, 201);
+}, { admin: true });
+route('PATCH', '/categorias/:id', async ({ req, params }) => {
+  const nombre = str((await body(req)).nombre, 60);
+  if (!nombre) throw new HttpError(400, 'Escribe el nombre de la categoría');
+  const r = await q('update categorias set nombre=$2 where id=$1 returning id', [params.id, nombre]);
+  if (!r.length) throw new HttpError(404, 'Categoría no encontrada');
+  return json({ ok: true });
+}, { admin: true });
+route('DELETE', '/categorias/:id', async ({ params }) => {
+  await q('update productos set categoria_id=null where categoria_id=$1', [params.id]); // los productos quedan «sin categoría»
+  await q('delete from categorias where id=$1', [params.id]);
+  return json({ ok: true });
+}, { admin: true });
 
 route('POST', '/productos', async ({ req }) => {
   const b = await body(req);
@@ -53,7 +84,7 @@ route('POST', '/productos', async ({ req }) => {
   if (!nombre) throw new HttpError(400, 'Escribe el nombre del producto');
   const moneda = MONEDAS.includes(b.moneda) ? b.moneda : 'CRC';
   const id = uid();
-  await q('insert into productos(id, nombre, descripcion, precio, moneda) values($1,$2,$3,$4,$5)', [id, nombre, str(b.descripcion, 300), num(b.precio, 0, 1e10, 0), moneda]);
+  await q('insert into productos(id, nombre, descripcion, precio, moneda, categoria_id) values($1,$2,$3,$4,$5,$6)', [id, nombre, str(b.descripcion, 300), num(b.precio, 0, 1e10, 0), moneda, await catValida(b.categoriaId)]);
   return json({ producto: mapProducto((await q('select * from productos where id=$1', [id]))[0]) }, 201);
 }, { admin: true });
 
@@ -63,9 +94,10 @@ route('PATCH', '/productos/:id', async ({ req, params }) => {
   if (!cur) throw new HttpError(404, 'Producto no encontrado');
   const nombre = 'nombre' in b ? str(b.nombre, 120) : cur.nombre;
   if (!nombre) throw new HttpError(400, 'Escribe el nombre del producto');
-  await q('update productos set nombre=$2, descripcion=$3, precio=$4, moneda=$5, activo=$6 where id=$1', [
+  await q('update productos set nombre=$2, descripcion=$3, precio=$4, moneda=$5, activo=$6, categoria_id=$7 where id=$1', [
     params.id, nombre, 'descripcion' in b ? str(b.descripcion, 300) : cur.descripcion,
     'precio' in b ? num(b.precio, 0, 1e10, 0) : cur.precio, MONEDAS.includes(b.moneda) ? b.moneda : cur.moneda, 'activo' in b ? !!b.activo : cur.activo,
+    'categoriaId' in b ? await catValida(b.categoriaId) : cur.categoria_id,
   ]);
   return json({ producto: mapProducto((await q('select * from productos where id=$1', [params.id]))[0]) });
 }, { admin: true });
@@ -151,7 +183,7 @@ route('POST', '/etapas', async ({ req }) => {
   let clave = slug(nombre);
   for (let i = 2; et.some((e) => e.clave === clave); i++) clave = `${slug(nombre)}-${i}`;
   let orden = et.length + 1;
-  if (tipo === 'abierta' || tipo === 'inicial') {
+  if (tipo === 'abierta' || tipo === 'inicial' || tipo === 'pausada') {
     // Las etapas nuevas del embudo van antes de Ganado y Perdido.
     const cierre = et.find((e) => e.tipo === 'ganada' || e.tipo === 'perdida');
     if (cierre) {

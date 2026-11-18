@@ -1,8 +1,8 @@
 
 /* ---------- Panel de administración ---------- */
-var ADM_SEC=[['negocio','Negocio'],['canales','Canales'],['etapas','Etapas'],['motivos','Motivos de pérdida'],['productos','Productos'],['usuarios','Usuarios'],['archivos','Imágenes'],['perdidos','Leads perdidos'],['licencia','Licencia']];
+var ADM_SEC=[['negocio','Negocio'],['canales','Canales'],['etapas','Etapas'],['motivos','Motivos de pérdida'],['productos','Productos'],['usuarios','Usuarios'],['roles','Roles'],['archivos','Imágenes'],['perdidos','Leads perdidos'],['licencia','Licencia']];
 AD.n=0;AD.arch={origen:'todas',items:[],total:0};AD.pf='';
-var TIPOS_ET=[['inicial','Inicial (entran aquí)'],['abierta','En proceso'],['ganada','Ganado'],['perdida','Perdido']];
+var TIPOS_ET=[['inicial','Inicial (entran aquí)'],['abierta','En proceso'],['pausada','En pausa'],['ganada','Ganado'],['perdida','Perdido']];
 var admBody=function(h){var b=$('#admBody');if(b)b.innerHTML=h};
 var sw=function(id,on,label){return '<label class="sw"><input type="checkbox" data-sw="'+id+'"'+(on?' checked':'')+'><i></i><span>'+label+'</span></label>'};
 var li=function(ok,t){return '<li><span class="'+(ok?'ok':'no')+'">'+(ok?'✓':'✗')+'</span> '+t+'</li>'};
@@ -30,10 +30,16 @@ function admRender(){
 var SEC={};
 window.renderAdmin=renderAdmin;
 
+var DIAS=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
 SEC.negocio=function(out){
+  var H=S.settings.horario||[];
   out('<div class="card"><h2>Tu negocio</h2><p class="sub">Estos datos se usan en toda la aplicación.</p><div class="fg">'+
     '<label class="fl full">Nombre del negocio<input class="in" data-s="negocio" value="'+esc(S.settings.negocio)+'"></label>'+
     '<label class="fl full">Días de aviso por defecto para leads nuevos<input class="in" data-s="avisoDias" type="number" min="0" max="90" value="'+esc(S.settings.avisoDias)+'"></label></div></div>'+
+    '<div class="card"><h2>Horario de atención</h2><p class="sub">Define cuándo se atiende. Al programar una tarea o cita fuera de este horario, Pulso avisa antes de guardarla.</p>'+
+    '<div class="hor">'+[1,2,3,4,5,6,0].map(function(d){var x=H[d]||{on:false,desde:'08:00',hasta:'17:00'};return '<div class="hrow"><label class="sw"><input type="checkbox" data-hor="'+d+'" data-hf="on"'+(x.on?' checked':'')+'><i></i><span>'+DIAS[d]+'</span></label><input class="in" type="time" data-hor="'+d+'" data-hf="desde" value="'+x.desde+'"'+(x.on?'':' disabled')+' aria-label="Abre"><span class="muted">a</span><input class="in" type="time" data-hor="'+d+'" data-hf="hasta" value="'+x.hasta+'"'+(x.on?'':' disabled')+' aria-label="Cierra"></div>'}).join('')+'</div></div>'+
+    '<div class="card"><h2>Entrada al sistema</h2><p class="sub">Con el PIN, el personal entra con su correo y un número de 4 a 6 cifras, sin escribir la contraseña. Es cómodo para equipos compartidos o tablets; los administradores siempre entran con contraseña. El PIN de cada persona se asigna en Usuarios.</p>'+sw('pinActivo',S.settings.pinActivo!==false,'Permitir entrar con PIN')+'</div>'+
+    '<div class="card"><h2>Soporte técnico</h2><p class="sub">Correo donde llegan los tickets que el personal crea desde «Ayuda».</p><label class="fl full">Correo de soporte<input class="in" type="email" data-s="soporteEmail" placeholder="soporte@matmax.com" value="'+esc(S.settings.soporteEmail||'')+'"></label></div>'+
     '<div class="card"><h2>Resumen</h2><dl class="kv"><dt>Leads</dt><dd>'+S.leads.length+'</dd><dt>Etapas</dt><dd>'+S.etapas.length+'</dd><dt>Productos activos</dt><dd>'+S.productos.length+'</dd><dt>Usuarios</dt><dd>'+S.usuarios.length+'</dd></dl></div>');
 };
 
@@ -83,7 +89,7 @@ SEC.etapas=function(out,ok){
   return api('GET','/etapas').then(function(r){
     if(!ok())return;
     var n=r.etapas.length;
-    out('<div class="card"><h2>Etapas del embudo</h2><p class="sub">Cambia nombres, colores y orden. El tipo define el comportamiento: los leads nuevos entran en la etapa <b>inicial</b>; <b>ganado</b> y <b>perdido</b> cierran el lead (al perder se pide el motivo).</p>'+
+    out('<div class="card"><h2>Etapas del embudo</h2><p class="sub">Cambia nombres, colores y orden. El tipo define el comportamiento: los leads nuevos entran en la etapa <b>inicial</b>; <b>ganado</b> y <b>perdido</b> cierran el lead (al perder se pide el motivo).</p><ul class="tipos"><li><b>Inicial:</b> donde entran los leads nuevos.</li><li><b>En proceso:</b> etapas normales del embudo (Contactado, Cotizado, Negociación…).</li><li><b>En pausa:</b> el lead se congela sin cerrarse (ej. «Esperando fechas»): no genera avisos ni cuenta como activo.</li><li><b>Ganado / Perdido:</b> cierran el lead.</li></ul><p class="sub">Puedes crear tantas etapas como quieras abajo, en «Agregar etapa»: elige un nombre, un color y el tipo que más se parezca a lo que hace.</p>'+
       r.etapas.map(function(e,i){return '<div class="rowline r-et"><input class="in" data-adm="et" data-k="'+esc(e.clave)+'" data-fld="nombre" value="'+esc(e.nombre)+'" aria-label="Nombre de la etapa"><select class="in" data-adm="et" data-k="'+esc(e.clave)+'" data-fld="color" aria-label="Color">'+colorOpts(e.color)+'</select><select class="in" data-adm="et" data-k="'+esc(e.clave)+'" data-fld="tipo" aria-label="Tipo">'+optHtml(TIPOS_ET,e.tipo)+'</select><div class="btns"><span class="muted" style="align-self:center;font-size:12px">'+pl(e.leads,'lead','leads')+'</span><button class="btn sm" data-action="et-mover" data-k="'+esc(e.clave)+'" data-dir="up" aria-label="Subir"'+(i?'':' disabled')+'>↑</button><button class="btn sm" data-action="et-mover" data-k="'+esc(e.clave)+'" data-dir="down" aria-label="Bajar"'+(i<n-1?'':' disabled')+'>↓</button><button class="btn sm danger" data-action="et-del" data-k="'+esc(e.clave)+'"'+(e.leads?' disabled title="Mueve sus leads a otra etapa primero"':'')+'>Eliminar</button></div></div>'}).join('')+'</div>'+
       '<div class="card"><h2>Agregar etapa</h2><form class="fg" data-form="et-add"><label class="fl">Nombre<input class="in" name="nombre" required maxlength="40" placeholder="Ej: Reserva confirmada"></label><label class="fl">Color<select class="in" name="color">'+colorOpts('accent')+'</select></label><label class="fl full">Tipo<select class="in" name="tipo">'+optHtml(TIPOS_ET,'abierta')+'</select></label><button class="btn primary full" type="submit">Agregar al final</button></form></div>');
   });
@@ -102,20 +108,40 @@ SEC.motivos=function(out,ok){
 SEC.productos=function(out,ok){
   return api('GET','/productos').then(function(r){
     if(!ok())return;
+    var cats=r.categorias||[];
+    var catOpts=function(v){return '<option value="">Sin categoría</option>'+cats.map(function(c){return '<option value="'+esc(c.id)+'"'+(c.id===v?' selected':'')+'>'+esc(c.nombre)+'</option>'}).join('')};
     out('<div class="card"><h2>Catálogo de productos</h2><p class="sub">Lo que vendes. Se agregan a cada lead desde su ficha; el lead guarda el precio con que se agregó.</p>'+
-      (r.productos.length?r.productos.map(function(p){return '<div class="rowline r-pr"><input class="in" data-adm="pr" data-k="'+p.id+'" data-fld="nombre" value="'+esc(p.nombre)+'" aria-label="Nombre"><input class="in" type="number" min="0" step="any" data-adm="pr" data-k="'+p.id+'" data-fld="precio" value="'+p.precio+'" aria-label="Precio"><select class="in" data-adm="pr" data-k="'+p.id+'" data-fld="moneda" aria-label="Moneda"><option value="CRC"'+(p.moneda==='CRC'?' selected':'')+'>₡</option><option value="USD"'+(p.moneda==='USD'?' selected':'')+'>$</option></select><div class="btns"><button class="btn sm" data-action="pr-toggle" data-k="'+p.id+'" data-on="'+(p.activo?'1':'')+'">'+(p.activo?'Activo':'Oculto')+'</button><button class="btn sm danger" data-action="pr-del" data-k="'+p.id+'">Eliminar</button></div></div>'}).join(''):'<p class="muted">Todavía no hay productos. Agrega el primero abajo.</p>')+'</div>'+
-      '<div class="card"><h2>Agregar producto</h2><form class="fg" data-form="pr-add"><label class="fl full">Nombre<input class="in" name="nombre" required maxlength="120" placeholder="Ej: Paquete 3 noches"></label><label class="fl full">Descripción (opcional)<input class="in" name="descripcion" maxlength="300"></label><label class="fl">Precio<input class="in" name="precio" type="number" min="0" step="any" value="0"></label><label class="fl">Moneda<select class="in" name="moneda"><option value="CRC">Colones (₡)</option><option value="USD">Dólares ($)</option></select></label><button class="btn primary full" type="submit">Agregar producto</button></form></div>');
+      (r.productos.length?r.productos.map(function(p){return '<div class="rowline r-pr"><input class="in" data-adm="pr" data-k="'+p.id+'" data-fld="nombre" value="'+esc(p.nombre)+'" aria-label="Nombre"><input class="in" type="number" min="0" step="any" data-adm="pr" data-k="'+p.id+'" data-fld="precio" value="'+p.precio+'" aria-label="Precio"><select class="in" data-adm="pr" data-k="'+p.id+'" data-fld="moneda" aria-label="Moneda"><option value="CRC"'+(p.moneda==='CRC'?' selected':'')+'>₡</option><option value="USD"'+(p.moneda==='USD'?' selected':'')+'>$</option></select><select class="in" data-adm="pr" data-k="'+p.id+'" data-fld="categoriaId" aria-label="Categoría">'+catOpts(p.categoriaId)+'</select><div class="btns"><button class="btn sm" data-action="pr-toggle" data-k="'+p.id+'" data-on="'+(p.activo?'1':'')+'">'+(p.activo?'Activo':'Oculto')+'</button><button class="btn sm danger" data-action="pr-del" data-k="'+p.id+'">Eliminar</button></div></div>'}).join(''):'<p class="muted">Todavía no hay productos. Agrega el primero abajo.</p>')+'</div>'+
+      '<div class="card"><h2>Categorías</h2><p class="sub">Agrupa tus productos (por ejemplo «Habitaciones», «Tours», «Servicios»). Se usan para ordenar el catálogo y en los reportes.</p>'+
+        (cats.length?cats.map(function(c){return '<div class="rowline" style="grid-template-columns:minmax(0,1fr) auto"><input class="in" data-adm="cat" data-k="'+esc(c.id)+'" data-fld="nombre" value="'+esc(c.nombre)+'" aria-label="Categoría"><div class="btns"><span class="muted" style="align-self:center;font-size:12px">'+pl(c.productos,'producto','productos')+'</span><button class="btn sm danger" data-action="cat-del" data-k="'+esc(c.id)+'">Eliminar</button></div></div>'}).join(''):'<p class="muted">Todavía no hay categorías.</p>')+
+        '<form class="copyrow" data-form="cat-add" style="margin-top:10px"><input class="in" name="nombre" required maxlength="60" placeholder="Nueva categoría"><button class="btn primary" type="submit">Agregar categoría</button></form></div>'+
+      '<div class="card"><h2>Agregar producto</h2><form class="fg" data-form="pr-add"><label class="fl full">Nombre<input class="in" name="nombre" required maxlength="120" placeholder="Ej: Paquete 3 noches"></label><label class="fl full">Categoría<select class="in" name="categoriaId">'+catOpts('')+'</select></label><label class="fl full">Descripción (opcional)<input class="in" name="descripcion" maxlength="300"></label><label class="fl">Precio<input class="in" name="precio" type="number" min="0" step="any" value="0"></label><label class="fl">Moneda<select class="in" name="moneda"><option value="CRC">Colones (₡)</option><option value="USD">Dólares ($)</option></select></label><button class="btn primary full" type="submit">Agregar producto</button></form></div>');
   });
 };
 
 SEC.usuarios=function(out,ok){
-  return Promise.all([api('GET','/usuarios'),api('GET','/licencia')]).then(function(R){
+  return Promise.all([api('GET','/usuarios'),api('GET','/licencia'),api('GET','/roles')]).then(function(R){
     if(!ok())return;
-    var us=R[0].usuarios,L=R[1].licencia,lim=L.usuarios||0;
-    out('<div class="card"><h2>Usuarios</h2><p class="sub">'+us.length+(lim?' de '+lim+' permitidos por tu licencia':' usuarios (sin límite)')+'.</p>'+
-      us.map(function(u){return '<div class="rowline r-us"><input class="in" data-adm="us" data-k="'+u.id+'" data-fld="nombre" value="'+esc(u.nombre)+'" aria-label="Nombre"><span class="muted" style="overflow:hidden;text-overflow:ellipsis">'+esc(u.email)+'</span><select class="in" data-adm="us" data-k="'+u.id+'" data-fld="rol" aria-label="Rol"><option value="vendedor"'+(u.rol==='vendedor'?' selected':'')+'>Vendedor</option><option value="admin"'+(u.rol==='admin'?' selected':'')+'>Administrador</option></select>'+(u.id===S.me.id?'<span class="muted" style="font-size:12px">Tú</span>':'<button class="btn sm danger" data-action="us-del" data-k="'+u.id+'">Eliminar</button>')+'</div>'+
-        '<details style="padding:0 0 8px"><summary class="muted" style="cursor:pointer;font-size:12px">Cambiar contraseña de '+esc(u.nombre)+'</summary><form class="copyrow" data-form="us-pass" data-k="'+u.id+'" style="margin-top:6px"><input class="in" name="password" type="password" minlength="8" required placeholder="Nueva contraseña (mínimo 8)" autocomplete="new-password"><button class="btn" type="submit">Cambiar</button></form></details>'}).join('')+'</div>'+
-      '<div class="card"><h2>Agregar usuario</h2><form class="fg" data-form="user"><label class="fl">Nombre<input class="in" name="nombre" required></label><label class="fl">Correo<input class="in" name="email" type="email" required></label><label class="fl">Contraseña (mínimo 8)<input class="in" name="password" type="password" minlength="8" required autocomplete="new-password"></label><label class="fl">Rol<select class="in" name="rol"><option value="vendedor">Vendedor</option><option value="admin">Administrador</option></select></label><button class="btn primary full" type="submit">Agregar usuario</button></form></div>');
+    var us=R[0].usuarios,L=R[1].licencia,lim=L.usuarios||0,roles=R[2].roles;
+    var ropts=function(v){return roles.map(function(r){return '<option value="'+esc(r.id)+'"'+(r.id===v?' selected':'')+'>'+esc(r.nombre)+'</option>'}).join('')};
+    out('<div class="card"><h2>Usuarios</h2><p class="sub">'+us.length+(lim?' de '+lim+' permitidos por tu plan':' usuarios (sin límite)')+'. El rol define qué puede hacer cada persona; los roles se crean en la sección Roles.</p>'+
+      us.map(function(u){return '<div class="rowline r-us"><input class="in" data-adm="us" data-k="'+u.id+'" data-fld="nombre" value="'+esc(u.nombre)+'" aria-label="Nombre"><span class="muted" style="overflow:hidden;text-overflow:ellipsis">'+esc(u.email)+'</span><select class="in" data-adm="us" data-k="'+u.id+'" data-fld="rol" aria-label="Rol">'+ropts(u.rol)+'</select>'+(u.id===S.me.id?'<span class="muted" style="font-size:12px">Tú</span>':'<button class="btn sm danger" data-action="us-del" data-k="'+u.id+'">Eliminar</button>')+'</div>'+
+        '<details style="padding:0 0 8px"><summary class="muted" style="cursor:pointer;font-size:12px">Contraseña y PIN de '+esc(u.nombre)+(u.tiene_pin?' · tiene PIN':'')+'</summary>'+
+        '<form class="copyrow" data-form="us-pass" data-k="'+u.id+'" style="margin-top:6px"><input class="in" name="password" type="password" minlength="8" required placeholder="Nueva contraseña (mínimo 8)" autocomplete="new-password"><button class="btn" type="submit">Cambiar contraseña</button></form>'+
+        (u.rol==='admin'?'<p class="muted" style="font-size:12px;margin:6px 0 0">Los administradores entran solo con contraseña.</p>':'<form class="copyrow" data-form="us-pin" data-k="'+u.id+'" style="margin-top:6px"><input class="in" name="pin" inputmode="numeric" pattern="[0-9]{4,6}" maxlength="6" placeholder="PIN de 4 a 6 números" autocomplete="off"><button class="btn" type="submit">'+(u.tiene_pin?'Cambiar PIN':'Dar PIN')+'</button>'+(u.tiene_pin?'<button class="btn danger" type="button" data-action="us-pin-del" data-k="'+u.id+'">Quitar</button>':'')+'</form>')+'</details>'}).join('')+'</div>'+
+      '<div class="card"><h2>Agregar usuario</h2><form class="fg" data-form="user"><label class="fl">Nombre<input class="in" name="nombre" required></label><label class="fl">Correo<input class="in" name="email" type="email" required></label><label class="fl">Contraseña (mínimo 8)<input class="in" name="password" type="password" minlength="8" required autocomplete="new-password"></label><label class="fl">Rol<select class="in" name="rol">'+ropts('vendedor')+'</select></label><button class="btn primary full" type="submit">Agregar usuario</button></form></div>');
+  });
+};
+
+SEC.roles=function(out,ok){
+  return api('GET','/roles').then(function(r){
+    if(!ok())return;
+    out('<div class="card"><h2>Roles</h2><p class="sub">Un rol es un conjunto de permisos. Crea los que necesites (por ejemplo «Recepción» o «Supervisor») y asígnalos a cada usuario. El Administrador siempre puede todo.</p>'+
+      r.roles.map(function(x){
+        return '<div class="rolbox"><div class="rowline" style="grid-template-columns:minmax(0,1fr) auto"><input class="in" data-adm="rol" data-k="'+esc(x.id)+'" data-fld="nombre" value="'+esc(x.nombre)+'"'+(x.id==='admin'?' disabled':'')+' aria-label="Nombre del rol"><span class="muted" style="font-size:12px;align-self:center">'+pl(x.usuarios,'usuario','usuarios')+(x.sistema?'':' · <button class="btn sm danger" data-action="rol-del" data-k="'+esc(x.id)+'">Eliminar</button>')+'</span></div>'+
+          '<div class="perms">'+r.permisos.map(function(p){return '<label class="chk2"><input type="checkbox" data-adm="rol-perm" data-k="'+esc(x.id)+'" data-p="'+esc(p[0])+'"'+(x.permisos.indexOf(p[0])>=0?' checked':'')+(x.id==='admin'?' disabled':'')+'><span>'+esc(p[1])+'</span></label>'}).join('')+'</div></div>';
+      }).join('')+'</div>'+
+      '<div class="card"><h2>Crear rol</h2><form class="fg" data-form="rol-add"><label class="fl full">Nombre del rol<input class="in" name="nombre" required maxlength="60" placeholder="Ej: Recepción"></label><div class="perms full">'+r.permisos.map(function(p){return '<label class="chk2"><input type="checkbox" name="perm" value="'+esc(p[0])+'"'+(p[0]==='reportes'?'':' checked')+'><span>'+esc(p[1])+'</span></label>'}).join('')+'</div><button class="btn primary full" type="submit">Crear rol</button></form></div>');
   });
 };
 
@@ -186,7 +212,10 @@ window.adminAct=function(a,el,id){
     case 'mo-toggle':api('PATCH','/motivos/'+k,{activo:!el.dataset.on}).then(admSync).then(admRender).catch(admErr);break;
     case 'mo-del':if(armed(el,'¿Eliminar?'))api('DELETE','/motivos/'+k).then(admSync).then(admRender).catch(admErr);break;
     case 'pr-toggle':api('PATCH','/productos/'+k,{activo:!el.dataset.on}).then(admSync).then(admRender).catch(admErr);break;
+    case 'cat-del':if(armed(el,'¿Eliminar?'))api('DELETE','/categorias/'+k).then(admSync).then(admRender).catch(admErr);break;
     case 'pr-del':if(armed(el,'¿Eliminar?'))api('DELETE','/productos/'+k).then(admSync).then(admRender).catch(admErr);break;
+    case 'us-pin-del':api('PATCH','/usuarios/'+k,{pin:''}).then(function(){toast('PIN quitado');admRender()}).catch(admErr);break;
+    case 'rol-del':if(armed(el,'¿Eliminar?'))api('DELETE','/roles/'+k).then(admRender).catch(admErr);break;
     case 'us-del':if(armed(el,'¿Eliminar?'))api('DELETE','/usuarios/'+k).then(admSync).then(admRender).catch(admErr);break;
     case 'ar-ver':$('#lbImg').src=el.dataset.url;$('#lbImg').alt=el.dataset.n;$('#lbCap').textContent=el.dataset.n;showOv('lbOv');break;
     case 'ar-del':if(armed(el,'¿Borrar?'))api('DELETE',(el.dataset.o==='chat'?'/medios/':'/archivos/')+id).then(function(){AD.arch.items=AD.arch.items.filter(function(x){return x.id!==id});AD.arch.total--;admBody(archHtml());return admSync()}).catch(fail);break;
@@ -196,9 +225,20 @@ window.adminAct=function(a,el,id){
 };
 window.adminChange=function(el){
   var d=el.dataset||{};
+  if(d.hor!==undefined){
+    var H2=[0,1,2,3,4,5,6].map(function(i){var q=function(f){return document.querySelector('[data-hor="'+i+'"][data-hf="'+f+'"]')};return {on:q('on').checked,desde:q('desde').value||'08:00',hasta:q('hasta').value||'17:00'}});
+    api('PATCH','/ajustes',{horario:H2}).then(admSync).then(function(){toast('Horario guardado');admRender()}).catch(function(e){admErr(e);admRender()});
+    return true;
+  }
+  if(d.adm==='rol-perm'){
+    var ps=[].slice.call(document.querySelectorAll('[data-adm="rol-perm"][data-k="'+d.k+'"]')).filter(function(c){return c.checked}).map(function(c){return c.dataset.p});
+    api('PATCH','/roles/'+d.k,{permisos:ps}).then(function(){toast('Permisos guardados')}).catch(admErr);
+    return true;
+  }
+  if(d.adm==='rol'){api('PATCH','/roles/'+d.k,{nombre:el.value}).then(function(){toast('Guardado')}).catch(admErr);return true}
   if(d.sw){
     var b={};b[d.sw]=el.checked;
-    api('PATCH','/ajustes',b).then(admSync).then(function(){toast(el.checked?'Canal activado':'Canal desactivado');admRender()}).catch(admErr);
+    api('PATCH','/ajustes',b).then(admSync).then(function(){toast(d.sw==='pinActivo'?'Guardado':(el.checked?'Canal activado':'Canal desactivado'));admRender()}).catch(admErr);
     return true;
   }
   if(d.adm==='retencion'){api('PATCH','/ajustes',{retencionDias:Number(el.value)}).then(function(){AD.stor.retencionDias=Number(el.value);toast('Guardado');admRender()}).catch(admErr);return true}
@@ -206,7 +246,7 @@ window.adminChange=function(el){
   if(d.adm==='pf'){AD.pf=el.value;admRender();return true}
   if(d.adm){
     var p={};p[d.fld]=el.value;
-    var path={et:'/etapas/'+encodeURIComponent(d.k||''),mo:'/motivos/'+d.k,pr:'/productos/'+d.k,us:'/usuarios/'+d.k}[d.adm];
+    var path={cat:'/categorias/'+d.k,et:'/etapas/'+encodeURIComponent(d.k||''),mo:'/motivos/'+d.k,pr:'/productos/'+d.k,us:'/usuarios/'+d.k}[d.adm];
     api('PATCH',path,p).then(admSync).then(function(){toast('Guardado');if(d.fld!=='nombre'||d.adm==='pr')admRender()}).catch(admErr);
     return true;
   }
@@ -217,8 +257,11 @@ window.adminSubmit=function(f,kind,fd,g,done){
   if(kind==='et-add')return run(api('POST','/etapas',{nombre:g('nombre'),color:g('color'),tipo:g('tipo')}),'Etapa agregada');
   if(kind==='correo-cfg')return run(api('PATCH','/admin/correo',{imapHost:g('imapHost'),imapPort:g('imapPort'),usuario:g('usuario'),pass:g('pass'),smtpHost:g('smtpHost'),smtpPort:g('smtpPort'),nombre:g('nombre'),ignorar:g('ignorar')}),'Correo guardado');
   if(kind==='mo-add')return run(api('POST','/motivos',{nombre:g('nombre')}),'Motivo agregado');
-  if(kind==='pr-add')return run(api('POST','/productos',{nombre:g('nombre'),descripcion:g('descripcion'),precio:g('precio'),moneda:g('moneda')}),'Producto agregado');
+  if(kind==='cat-add')return run(api('POST','/categorias',{nombre:g('nombre')}),'Categoría agregada');
+  if(kind==='pr-add')return run(api('POST','/productos',{nombre:g('nombre'),descripcion:g('descripcion'),precio:g('precio'),moneda:g('moneda'),categoriaId:g('categoriaId')}),'Producto agregado');
   if(kind==='user')return run(api('POST','/usuarios',{nombre:g('nombre'),email:g('email'),password:String(fd.get('password')||''),rol:g('rol')}),'Usuario agregado');
+  if(kind==='rol-add')return run(api('POST','/roles',{nombre:g('nombre'),permisos:fd.getAll('perm')}),'Rol creado');
+  if(kind==='us-pin')return run(api('PATCH','/usuarios/'+f.dataset.k,{pin:String(fd.get('pin')||'')}),'PIN guardado');
   if(kind==='us-pass')return run(api('PATCH','/usuarios/'+f.dataset.k,{password:String(fd.get('password')||'')}),'Contraseña cambiada');
   if(kind==='lic')return run(api('POST','/licencia',{licencia:g('licencia')}),'Licencia guardada');
   return false;

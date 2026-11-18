@@ -5,7 +5,7 @@ import { estadoLicencia } from './licencia';
 
 export type Ctx = { req: Request; url: URL; params: Record<string, string>; user: User | null };
 type Handler = (c: Ctx) => Promise<Response>;
-type Opts = { public?: boolean; admin?: boolean; webhook?: boolean; libre?: boolean };
+type Opts = { public?: boolean; admin?: boolean; perm?: string; webhook?: boolean; libre?: boolean };
 type Route = { method: string; re: RegExp; keys: string[]; h: Handler } & Opts;
 
 const routes: Route[] = [];
@@ -62,6 +62,13 @@ export async function dispatch(req: Request, segs: string[]): Promise<Response> 
         user = await getUser(req);
         if (!user) throw new HttpError(401, 'Tu sesión venció. Entra de nuevo.');
         if (r.admin && user.rol !== 'admin') throw new HttpError(403, 'Solo el administrador puede hacer esto');
+        if (r.perm && user.rol !== 'admin' && !user.permisos.includes(r.perm)) throw new HttpError(403, 'Tu rol no tiene permiso para esto');
+        // Sin «ver todos los leads» solo se puede abrir un lead propio o sin asignar.
+        const ml = /^\/leads\/([^/]+)/.exec(path);
+        if (ml && user.rol !== 'admin' && !user.permisos.includes('ver_todos')) {
+          const l = (await q('select asignado from leads where id=$1', [ml[1]]))[0];
+          if (l && l.asignado && l.asignado !== user.id) throw new HttpError(403, 'Este lead está asignado a otra persona');
+        }
       }
       if (method !== 'GET' && !r.webhook) {
         checkOrigin(req);

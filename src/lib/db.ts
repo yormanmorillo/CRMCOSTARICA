@@ -88,6 +88,20 @@ alter table leads add column if not exists chat_id text;
 create unique index if not exists leads_chat_uidx on leads (chat_canal, chat_id) where chat_id is not null;
 alter table mensajes add column if not exists meta_id text;
 alter table mensajes add column if not exists estado text not null default '';
+create table if not exists roles (
+  id text primary key,
+  nombre text not null,
+  permisos jsonb not null default '[]'::jsonb,
+  sistema boolean not null default false,
+  creado timestamptz not null default now()
+);
+insert into roles(id, nombre, permisos, sistema) values
+  ('admin', 'Administrador', '[]', true),
+  ('vendedor', 'Vendedor', '["ver_todos","eliminar_leads","reportes"]', true)
+  on conflict (id) do nothing;
+alter table usuarios add column if not exists pin_hash text;
+alter table usuarios add column if not exists pin_fallos int not null default 0;
+alter table usuarios add column if not exists pin_hasta timestamptz;
 alter table mensajes add column if not exists asunto text not null default '';
 alter table mensajes add column if not exists canal text not null default '';
 create unique index if not exists mensajes_meta_uidx on mensajes (meta_id) where meta_id is not null;
@@ -151,6 +165,13 @@ create table if not exists productos (
   activo boolean not null default true,
   creado timestamptz not null default now()
 );
+create table if not exists categorias (
+  id text primary key,
+  nombre text not null,
+  orden int not null default 0,
+  creado timestamptz not null default now()
+);
+alter table productos add column if not exists categoria_id text;
 create table if not exists lead_productos (
   id text primary key,
   lead_id text not null references leads(id) on delete cascade,

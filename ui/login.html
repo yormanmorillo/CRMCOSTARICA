@@ -17,6 +17,7 @@ button{font:inherit;font-weight:600;border:0;border-radius:8px;background:var(--
 button:disabled{opacity:.6;cursor:wait}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 form{display:flex;flex-direction:column;gap:14px}
+.modos{display:flex;gap:4px;background:var(--bg);padding:4px;border-radius:10px;margin-bottom:12px}.modos button{flex:1;border:0;background:transparent;padding:8px;border-radius:7px;font:inherit;font-weight:600;color:var(--muted);cursor:pointer}.modos button[aria-pressed=true]{background:var(--surface);color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.15)}
 .err{background:var(--crit-soft);color:var(--crit);border-radius:8px;padding:9px 11px;font-weight:500}
 :root[data-theme="dark"]{--bg:#08141d;--surface:#0f2230;--fg:#e3eef5;--muted:#8fa8b8;--line:#23404f;--accent:#4cc3e0;--accent-fg:#04202a;--crit:#ff8f85;--crit-soft:#401b18;color-scheme:dark}
 :root[data-theme="light"]{color-scheme:light}
@@ -24,20 +25,33 @@ form{display:flex;flex-direction:column;gap:14px}
 <script>try{var t=localStorage.getItem('pulso-tema');if(t==='dark'||t==='light')document.documentElement.dataset.theme=t}catch(e){}</script></head><body>
 <main class="box">
   <div class="brand"><img src="/logo.png" alt="MATMAX IT Solutions" style="width:260px;max-width:80%;height:auto;background:#fff;border-radius:12px;padding:10px 14px"></div>
-  <p>Entra con tu correo y contraseña.</p>
+  <div class="modos" id="modos" hidden><button type="button" data-m="pw" aria-pressed="true">Contraseña</button><button type="button" data-m="pin" aria-pressed="false">Entrar con PIN</button></div>
+  <p id="ayuda">Entra con tu correo y contraseña.</p>
   <form id="f">
     <label>Correo<input id="email" name="email" type="email" required autocomplete="username" autofocus></label>
-    <label>Contraseña<input id="password" name="password" type="password" required autocomplete="current-password"></label>
+    <label id="lpw">Contraseña<input id="password" name="password" type="password" autocomplete="current-password"></label>
+    <label id="lpin" hidden>PIN<input id="pin" name="pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" placeholder="4 a 6 números"></label>
     <div class="err" id="err" role="alert" hidden></div>
     <button type="submit" id="go">Entrar</button>
   </form>
 </main>
 <script>
-document.getElementById('f').addEventListener('submit',function(e){
+var modo='pw',$=function(i){return document.getElementById(i)};
+function pon(m){
+  modo=m;$('lpw').hidden=m!=='pw';$('lpin').hidden=m!=='pin';
+  $('password').required=m==='pw';$('pin').required=m==='pin';
+  $('ayuda').textContent=m==='pw'?'Entra con tu correo y contraseña.':'Entra con tu correo y tu PIN. Los administradores usan contraseña.';
+  [].forEach.call(document.querySelectorAll('#modos button'),function(b){b.setAttribute('aria-pressed',String(b.dataset.m===m))});
+  (m==='pw'?$('password'):$('pin')).focus();
+}
+fetch('/api/auth/opciones').then(function(r){return r.json()}).then(function(o){if(o.pin){$('modos').hidden=false;try{if(localStorage.getItem('pulso-modo')==='pin')pon('pin')}catch(e){}}}).catch(function(){});
+$('modos').addEventListener('click',function(e){var b=e.target.closest('button');if(b){pon(b.dataset.m);try{localStorage.setItem('pulso-modo',b.dataset.m)}catch(x){}}});
+$('f').addEventListener('submit',function(e){
   e.preventDefault();
-  var b=document.getElementById('go'),er=document.getElementById('err');
+  var b=$('go'),er=$('err');
   b.disabled=true;er.hidden=true;
-  fetch('/api/auth/login',{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',body:JSON.stringify({email:document.getElementById('email').value,password:document.getElementById('password').value})})
+  var pin=modo==='pin';
+  fetch(pin?'/api/auth/pin':'/api/auth/login',{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',body:JSON.stringify(pin?{email:$('email').value,pin:$('pin').value}:{email:$('email').value,password:$('password').value})})
     .then(function(r){return r.json().catch(function(){return {}}).then(function(j){if(!r.ok)throw new Error(j.error||'No se pudo entrar');location.href='/'})})
     .catch(function(x){er.textContent=x.message;er.hidden=false;b.disabled=false});
 });

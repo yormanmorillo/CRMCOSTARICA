@@ -7,7 +7,7 @@ import type { User } from './auth';
 export const CANALES = ['whatsapp', 'web', 'instagram', 'facebook', 'correo', 'llamada', 'otro'];
 export const TIPOS = ['cr', 'ext'];
 export const COLORES = ['accent', 'fb', 'warn', 'vio', 'ok', 'muted', 'ig', 'crit', 'wa'];
-export const TIPOS_ETAPA = ['inicial', 'abierta', 'ganada', 'perdida'];
+export const TIPOS_ETAPA = ['inicial', 'abierta', 'pausada', 'ganada', 'perdida'];
 export const MONEDAS = ['CRC', 'USD'];
 
 /** Etapa en la que entra un lead nuevo (la primera de tipo "inicial"). Se usa dentro de los INSERT. */
@@ -29,7 +29,34 @@ export async function getSettings() {
   const m: Record<string, string> = {};
   rows.forEach((r) => (m[r.clave] = r.valor));
   const dias = parseInt(m.avisoDias, 10);
-  return { negocio: m.negocio || 'Pulso CRM', avisoDias: Number.isNaN(dias) ? 5 : dias };
+  return { negocio: m.negocio || 'Pulso CRM', avisoDias: Number.isNaN(dias) ? 5 : dias, pinActivo: m.pinActivo !== '0', horario: leerHorario(m.horario), soporteEmail: m.soporteEmail || process.env.SOPORTE_EMAIL || '' };
+}
+
+export type DiaHorario = { on: boolean; desde: string; hasta: string };
+/** Horario de atención por día de la semana (0 = domingo … 6 = sábado). Por defecto, lunes a viernes de 8:00 a 17:00. */
+export function leerHorario(raw?: string): DiaHorario[] {
+  const base: DiaHorario[] = [0, 1, 2, 3, 4, 5, 6].map((d) => ({ on: d >= 1 && d <= 5, desde: '08:00', hasta: '17:00' }));
+  try {
+    const j = JSON.parse(raw || '[]');
+    if (Array.isArray(j) && j.length === 7) {
+      return j.map((x: any, i: number) => ({
+        on: !!x?.on,
+        desde: /^\d{2}:\d{2}$/.test(x?.desde) ? x.desde : base[i].desde,
+        hasta: /^\d{2}:\d{2}$/.test(x?.hasta) ? x.hasta : base[i].hasta,
+      }));
+    }
+  } catch {}
+  return base;
+}
+/** ¿La fecha (AAAA-MM-DD) y hora (HH:MM, opcional) caen dentro del horario de atención? */
+export function dentroDeHorario(h: DiaHorario[], fecha: string, hora?: string): { ok: boolean; motivo: string } {
+  const [y, m, d] = fecha.split('-').map(Number);
+  const dia = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  const x = h[dia];
+  const nombres = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+  if (!x.on) return { ok: false, motivo: `El ${nombres[dia]} no se atiende.` };
+  if (hora && (hora < x.desde || hora > x.hasta)) return { ok: false, motivo: `El ${nombres[dia]} se atiende de ${x.desde} a ${x.hasta}.` };
+  return { ok: true, motivo: '' };
 }
 
 export async function setSetting(clave: string, valor: string | number) {
@@ -118,7 +145,7 @@ function agruparValores(rows: any[]) {
 }
 
 export async function loadState(user: User) {
-  const [leads, aten, arch, tareas, ult, settings, etapas, motivos, productos, usuarios, valores, lic, wa, mt, cw, web, co, ccfg] = await Promise.all([
+  const [leads, aten, arch, tareas, ult, settings, etapas, motivos, productos, categorias, usuarios, valores, lic, wa, mt, cw, web, co, ccfg] = await Promise.all([
     q('select * from leads order by creado desc, actualizado desc'),
     q('select id, lead_id, fecha, canal, nota, auto from atenciones order by fecha, creado'),
     q('select id, lead_id, nombre from archivos order by creado'),
@@ -127,7 +154,8 @@ export async function loadState(user: User) {
     getSettings(),
     getEtapas(),
     q('select id, nombre, orden, activo from motivos_perdida order by orden, nombre'),
-    q('select id, nombre, descripcion, precio::float8 as precio, moneda, activo from productos order by nombre'),
+    q('select id, nombre, descripcion, precio::float8 as precio, moneda, activo, categoria_id from productos order by nombre'),
+    q('select id, nombre from categorias order by orden, nombre'),
     q('select id, nombre, rol from usuarios order by creado'),
     q(SQL_VALOR),
     estadoLicencia(),
@@ -138,6 +166,10 @@ export async function loadState(user: User) {
     canalActivo('correo'),
     getAjuste('correo_cfg'),
   ]);
+  const veTodo = user.rol === 'admin' || user.permisos.includes('ver_todos');
+  const visibles = veTodo ? leads : leads.filter((r: any) => !r.asignado || r.asignado === user.id);
+  const idsVis = new Set(visibles.map((r: any) => r.id));
+  const tareasV = veTodo ? tareas : tareas.filter((t: any) => !t.lead_id || idsVis.has(t.lead_id));
   let correoOk = false;
   try {
     const j = JSON.parse(ccfg || '{}');
@@ -163,7 +195,8 @@ export async function loadState(user: User) {
     settings,
     etapas,
     motivos: motivos.filter((m) => m.activo),
-    productos: productos.filter((p) => p.activo),
+    productos: productos.filter((p) => p.activo).map((p: any) => ({ ...p, categoriaId: p.categoria_id || '' })),
+    categorias,
     usuarios: usuarios.map((u) => ({ id: u.id, nombre: u.nombre })),
     licencia: { estado: lic.estado, mensaje: lic.mensaje, puedeEscribir: lic.puedeEscribir, diasRestantes: lic.diasRestantes },
     chatwoot: { configurado: cwConfig().ok, activo: cw },
@@ -171,8 +204,8 @@ export async function loadState(user: User) {
     meta: { configurado: fbConfig().ok && mt, activo: mt },
     web: { activo: web },
     correo: { configurado: correoOk, activo: co },
-    leads: leads.map((r) => mapLead(r, gA.get(r.id) || [], gF.get(r.id) || [], gU.get(r.id), gV.get(r.id), nombres, mots)),
-    tasks: tareas.map(mapTarea),
+    leads: visibles.map((r: any) => mapLead(r, gA.get(r.id) || [], gF.get(r.id) || [], gU.get(r.id), gV.get(r.id), nombres, mots)),
+    tasks: tareasV.map(mapTarea),
   };
 }
 

@@ -1,7 +1,7 @@
 import { q } from './db';
 import { HttpError, json, uid, hoyCR, isDate, str, clamp, safeEqual } from './util';
-import { login, sessionCookie, clearCookie, hashPassword } from './auth';
-import { loadState, loadLead, getSettings, setSetting, mapTarea, getEtapas, logAct, canalActivo, siguienteEtapa, ETAPA_INICIAL_SQL, CANALES, TIPOS } from './leads';
+import { login, loginPin, sessionCookie, clearCookie, hashPassword, checkPassword, PERMISOS, limpiarCacheRoles } from './auth';
+import { loadState, loadLead, getSettings, setSetting, mapTarea, getEtapas, logAct, canalActivo, getAjuste, leerHorario, dentroDeHorario, siguienteEtapa, ETAPA_INICIAL_SQL, CANALES, TIPOS } from './leads';
 import { cwConfig, enviarMensaje, verifySignature } from './chatwoot';
 import { procesarEvento, registrarRespuesta } from './webhook';
 import { esDemoId, enviarWhatsApp, enviarSocial, fbConfig, probarWhatsApp, procesarMeta, verifyMetaSignature, ventanaWhatsApp, waConfig } from './meta';
@@ -20,6 +20,15 @@ export { dispatch } from './router';
 route('POST', '/auth/login', async ({ req }) => {
   const b = await body(req);
   const user = await login(String(b.email || ''), String(b.password || ''));
+  return json({ ok: true, user }, 200, { 'set-cookie': await sessionCookie(user, req) });
+}, { public: true });
+
+route('GET', '/auth/opciones', async () => json({ pin: (await getAjuste('pinActivo')) !== '0' }), { public: true });
+
+route('POST', '/auth/pin', async ({ req }) => {
+  if ((await getAjuste('pinActivo')) === '0') throw new HttpError(403, 'La entrada con PIN está desactivada.');
+  const b = await body(req);
+  const user = await loginPin(String(b.email || ''), String(b.pin || ''));
   return json({ ok: true, user }, 200, { 'set-cookie': await sessionCookie(user, req) });
 }, { public: true });
 
@@ -148,7 +157,7 @@ route('DELETE', '/leads/:id', async ({ params }) => {
   await mustLead(params.id);
   await q('delete from leads where id=$1', [params.id]);
   return json({ ok: true });
-});
+}, { perm: 'eliminar_leads' });
 
 /* ---------- Atenciones ---------- */
 route('POST', '/leads/:id/atenciones', async ({ req, params, user }) => {
@@ -180,6 +189,10 @@ route('POST', '/tareas', async ({ req }) => {
   let leadId: string | null = null;
   if (b.leadId) leadId = (await mustLead(String(b.leadId))).id;
   const hora = /^\d{2}:\d{2}$/.test(String(b.hora || '')) ? b.hora : '';
+  if (!b.forzar) {
+    const dh = dentroDeHorario(leerHorario(await getAjuste('horario')), b.fecha, hora);
+    if (!dh.ok) return json({ error: dh.motivo + ' Es fuera del horario de atención.', fueraDeHorario: true }, 409);
+  }
   const id = uid();
   await q('insert into tareas(id, lead_id, titulo, fecha, hora) values($1,$2,$3,$4,$5)', [id, leadId, titulo, b.fecha, hora]);
   const t = (await q('select * from tareas where id=$1', [id]))[0];
@@ -344,6 +357,17 @@ route('PATCH', '/ajustes', async ({ req }) => {
   const b = await body(req);
   if ('negocio' in b) await setSetting('negocio', str(b.negocio, 80) || 'Pulso CRM');
   if ('avisoDias' in b) await setSetting('avisoDias', clamp(b.avisoDias, 0, 90, 5));
+  if ('horario' in b) {
+    const h = leerHorario(JSON.stringify(b.horario));
+    if (h.some((x) => x.on && x.desde >= x.hasta)) throw new HttpError(400, 'La hora de cierre debe ser después de la de apertura.');
+    await setSetting('horario', JSON.stringify(h));
+  }
+  if ('soporteEmail' in b) {
+    const e = str(b.soporteEmail, 200).toLowerCase();
+    if (e && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) throw new HttpError(400, 'Correo de soporte no válido');
+    await setSetting('soporteEmail', e);
+  }
+  if ('pinActivo' in b) await setSetting('pinActivo', b.pinActivo ? '1' : '0');
   if ('retencionDias' in b) {
     const d = Number(b.retencionDias);
     if (![0, 30, 90, 180, 365].includes(d)) throw new HttpError(400, 'Elige 0, 30, 90, 180 o 365 días');
@@ -354,8 +378,54 @@ route('PATCH', '/ajustes', async ({ req }) => {
   return json({ settings: st, canales: { chatwoot: await canalActivo('chatwoot'), whatsapp: await canalActivo('whatsapp'), meta: await canalActivo('meta'), web: await canalActivo('web'), correo: await canalActivo('correo') } });
 }, { admin: true });
 
+async function rolValido(v: unknown) {
+  const id = String(v ?? 'vendedor');
+  if (!(await q('select 1 from roles where id=$1', [id])).length) throw new HttpError(400, 'Ese rol no existe');
+  return id;
+}
+
+/* ---------- Roles ---------- */
+const mapRol = (r: any) => ({ id: r.id, nombre: r.nombre, permisos: r.id === 'admin' ? PERMISOS.map((p) => p[0]) : r.permisos, sistema: r.sistema, usuarios: Number(r.usuarios) || 0 });
+const permisosValidos = (v: unknown) => (Array.isArray(v) ? v : []).filter((x) => PERMISOS.some((p) => p[0] === x));
+route('GET', '/roles', async () => {
+  const rows = await q('select r.*, (select count(*) from usuarios u where u.rol=r.id)::int as usuarios from roles r order by r.sistema desc, r.creado');
+  return json({ roles: rows.map(mapRol), permisos: PERMISOS });
+}, { admin: true });
+route('POST', '/roles', async ({ req }) => {
+  const b = await body(req);
+  const nombre = str(b.nombre, 60);
+  if (!nombre) throw new HttpError(400, 'Escribe el nombre del rol');
+  const id = 'r' + uid();
+  await q('insert into roles(id, nombre, permisos) values($1,$2,$3::jsonb)', [id, nombre, JSON.stringify(permisosValidos(b.permisos))]);
+  limpiarCacheRoles();
+  return json({ ok: true }, 201);
+}, { admin: true });
+route('PATCH', '/roles/:id', async ({ req, params }) => {
+  const b = await body(req);
+  const r = (await q('select * from roles where id=$1', [params.id]))[0];
+  if (!r) throw new HttpError(404, 'Rol no encontrado');
+  if (r.id === 'admin') throw new HttpError(409, 'El rol Administrador no se puede cambiar: lo puede todo.');
+  if ('nombre' in b) {
+    const n = str(b.nombre, 60);
+    if (!n) throw new HttpError(400, 'Escribe el nombre del rol');
+    await q('update roles set nombre=$1 where id=$2', [n, r.id]);
+  }
+  if ('permisos' in b) await q('update roles set permisos=$1::jsonb where id=$2', [JSON.stringify(permisosValidos(b.permisos)), r.id]);
+  limpiarCacheRoles();
+  return json({ ok: true });
+}, { admin: true });
+route('DELETE', '/roles/:id', async ({ params }) => {
+  const r = (await q('select * from roles where id=$1', [params.id]))[0];
+  if (!r) throw new HttpError(404, 'Rol no encontrado');
+  if (r.sistema) throw new HttpError(409, 'Los roles Administrador y Vendedor no se pueden borrar.');
+  if ((await q('select 1 from usuarios where rol=$1 limit 1', [r.id])).length) throw new HttpError(409, 'Hay usuarios con este rol. Cámbiales el rol primero.');
+  await q('delete from roles where id=$1', [r.id]);
+  limpiarCacheRoles();
+  return json({ ok: true });
+}, { admin: true });
+
 route('GET', '/usuarios', async () => {
-  return json({ usuarios: await q('select id, email, nombre, rol from usuarios order by creado') });
+  return json({ usuarios: await q('select id, email, nombre, rol, (pin_hash is not null) as tiene_pin from usuarios order by creado') });
 }, { admin: true });
 
 route('POST', '/usuarios', async ({ req }) => {
@@ -371,7 +441,7 @@ route('POST', '/usuarios', async ({ req }) => {
     const n = (await q('select count(*)::int as n from usuarios'))[0].n;
     if (n >= lic.usuarios) throw new HttpError(402, `Tu licencia permite ${lic.usuarios} usuarios. Pide una licencia con más usuarios para agregar otro.`);
   }
-  const rol = b.rol === 'admin' ? 'admin' : 'vendedor';
+  const rol = await rolValido(b.rol);
   const rows = await q(
     'insert into usuarios(id, email, nombre, rol, hash) values($1,$2,$3,$4,$5) on conflict (email) do nothing returning id, email, nombre, rol',
     [uid(), email, nombre, rol, hashPassword(password)],
@@ -396,12 +466,27 @@ route('PATCH', '/usuarios/:id', async ({ req, params, user }) => {
     set('nombre', n);
   }
   if ('rol' in b) {
-    const rol = b.rol === 'admin' ? 'admin' : 'vendedor';
+    const rol = await rolValido(b.rol);
     if (rol !== 'admin' && cur.rol === 'admin') {
       const admins = (await q("select count(*)::int as n from usuarios where rol='admin'"))[0].n;
       if (admins <= 1) throw new HttpError(409, 'Tiene que quedar al menos un administrador.');
     }
     set('rol', rol);
+    if (rol === 'admin') {
+      set('pin_hash', null);
+    }
+  }
+  if ('pin' in b) {
+    const pin = String(b.pin ?? '').trim();
+    if (pin === '') set('pin_hash', null);
+    else {
+      if (!/^\d{4,6}$/.test(pin)) throw new HttpError(400, 'El PIN son entre 4 y 6 números.');
+      const rolFinal = 'rol' in b ? await rolValido(b.rol) : cur.rol;
+      if (rolFinal === 'admin') throw new HttpError(409, 'Los administradores entran solo con contraseña. Usa PIN con los demás roles.');
+      set('pin_hash', hashPassword(pin));
+      set('pin_fallos', 0);
+      set('pin_hasta', null);
+    }
   }
   if (b.password) {
     if (String(b.password).length < 8) throw new HttpError(400, 'La contraseña debe tener al menos 8 caracteres');
@@ -412,7 +497,7 @@ route('PATCH', '/usuarios/:id', async ({ req, params, user }) => {
     await q(`update usuarios set ${cols.join(', ')} where id=$${vals.length}`, vals);
   }
   void user;
-  return json({ usuario: (await q('select id, email, nombre, rol from usuarios where id=$1', [params.id]))[0] });
+  return json({ usuario: (await q('select id, email, nombre, rol, (pin_hash is not null) as tiene_pin from usuarios where id=$1', [params.id]))[0] });
 }, { admin: true });
 
 route('DELETE', '/usuarios/:id', async ({ params, user }) => {
