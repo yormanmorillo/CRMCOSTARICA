@@ -1,12 +1,23 @@
-# Pulso CRM con Chatwoot
+# Pulso CRM
 
-CRM de seguimiento de clientes. Cuando alguien escribe por WhatsApp, Instagram, Facebook o el chat de la página web (todo conectado en Chatwoot), el lead se crea solo y la conversación se ve dentro de la ficha del lead. Desde ahí también se responde.
+CRM de seguimiento de clientes. Cuando alguien escribe por WhatsApp, el lead se crea solo y la conversación se ve y se responde dentro de Pulso CRM, en la pestaña **Conversaciones** y en la ficha de cada lead. Instagram, Facebook y el chat de la web se pueden conectar con Chatwoot (opcional).
+
+Hay dos formas de recibir los mensajes:
+
+| | WhatsApp directo con Meta (recomendado) | Chatwoot (opcional) |
+|---|---|---|
+| Qué es | Pulso CRM habla directo con WhatsApp Business Platform | Chatwoot recibe todos los canales y avisa a Pulso CRM |
+| Qué instalas | Nada extra | Chatwoot (en la nube o en tu servidor, 4 GB de memoria) |
+| Canales | WhatsApp (Instagram y Messenger son el siguiente paso) | WhatsApp, Instagram, Facebook y web |
+| Guía | [WHATSAPP.md](WHATSAPP.md) | Más abajo y [INSTALAR-EN-MI-SERVIDOR.md](INSTALAR-EN-MI-SERVIDOR.md) |
+
+Se pueden usar las dos a la vez: cada lead responde por el canal por el que escribió.
 
 Incluye: leads con canal detectado automáticamente, filtro costarricense o extranjero, atenciones por día, tareas con calendario, imágenes adjuntas, recordatorios de llegada ("avisar 5 días antes"), panel con lo urgente, usuarios con contraseña y conversaciones.
 
-> **¿Prefieres instalarlo todo en tu propio servidor** (Chatwoot incluido, con HTTPS y base de datos)? Sigue la guía [INSTALAR-EN-MI-SERVIDOR.md](INSTALAR-EN-MI-SERVIDOR.md). Lo de abajo es para publicarlo en Vercel.
+> **¿Prefieres instalarlo en tu propio servidor?** Pulso CRM solo (liviano, unos 512 MB): [WHATSAPP.md](WHATSAPP.md), sección "Instalación liviana". Con Chatwoot incluido: [INSTALAR-EN-MI-SERVIDOR.md](INSTALAR-EN-MI-SERVIDOR.md). Lo de abajo es para publicarlo en Vercel.
 
-## Cómo funciona
+## Cómo funciona con Chatwoot
 
 ```
 Cliente → WhatsApp / Instagram / Facebook / Web → Chatwoot (nube)
@@ -36,7 +47,8 @@ Nota: el plan gratuito (Hobby) de Vercel es solo para uso personal sin fines com
    | `AUTH_SECRET` | Un texto largo al azar (mínimo 16 caracteres) |
    | `ADMIN_EMAIL` y `ADMIN_PASSWORD` | Tu usuario administrador. Se crea la primera vez que entras |
    | `WEBHOOK_TOKEN` | Un texto largo al azar. Va dentro de la dirección del webhook |
-   | `CHATWOOT_URL` | `https://app.chatwoot.com` (o la dirección de tu cuenta) |
+   | `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `META_APP_SECRET`, `META_VERIFY_TOKEN` | Para WhatsApp directo con Meta. Mira [WHATSAPP.md](WHATSAPP.md) |
+   | `CHATWOOT_URL` | Solo si usas Chatwoot: `https://app.chatwoot.com` (o la dirección de tu cuenta) |
    | `CHATWOOT_ACCOUNT_ID` | El número que aparece en la dirección de Chatwoot: `.../app/accounts/NUMERO/...` |
    | `CHATWOOT_API_TOKEN` | En Chatwoot: tu perfil, Access Token |
    | `CHATWOOT_WEBHOOK_SECRET` | Opcional. Si tu Chatwoot muestra un secreto al crear el webhook, pégalo para verificar la firma |
@@ -50,13 +62,14 @@ Los pasos de Chatwoot y de Vercel pueden cambiar de nombre en sus pantallas. Si 
 
 ## Cosas que debes saber
 
-- **WhatsApp:** solo se puede responder dentro de las 24 horas siguientes al último mensaje del cliente. Si Chatwoot rechaza el envío, Pulso CRM muestra el motivo que dio Chatwoot.
+- **WhatsApp:** solo se puede responder dentro de las 24 horas siguientes al último mensaje del cliente. Si Meta o Chatwoot rechazan el envío, Pulso CRM muestra el motivo.
+- **WhatsApp directo no está probado contra Meta de verdad**, solo con mensajes simulados en el formato de Meta (ver [WHATSAPP.md](WHATSAPP.md)).
 - **Meta:** WhatsApp, Instagram y Facebook requieren cuentas y permisos de Meta Business, y la aprobación puede tardar. Eso se hace en Chatwoot, no aquí.
 - **Imágenes adjuntas** de los leads se guardan en la base de datos (se reducen a unos 1100 px). Para volúmenes grandes conviene moverlas a un almacenamiento de archivos.
-- **Ver imágenes y archivos que mande el cliente por chat:** se muestran desde la dirección que da Chatwoot. Solo se aceptan direcciones http(s).
+- **Imágenes y archivos que manda el cliente por chat:** con WhatsApp directo se descargan y se guardan en la base de datos (hasta 4 MB cada uno). Con Chatwoot se muestran desde la dirección que da Chatwoot (solo http y https).
 - **Usuarios:** el administrador agrega vendedores en Ajustes. Los vendedores ven y trabajan los leads, pero no ven ajustes, usuarios ni la conexión con Chatwoot.
 - **Datos personales:** los últimos 50 avisos de Chatwoot se guardan completos, para depurar. Si no los necesitas, bórralos de la tabla `eventos_cw`.
-- No incluye: respuesta automática con bot, envío de archivos desde el CRM al cliente, ni recordatorios por correo o WhatsApp. Los avisos se ven en el panel y el calendario.
+- No incluye: respuesta automática con bot, plantillas de WhatsApp (para escribir primero o después de 24 horas), envío de archivos desde el CRM al cliente, ni recordatorios por correo o WhatsApp. Los avisos se ven en el panel y el calendario.
 
 ## Probar en tu computadora
 
@@ -66,14 +79,12 @@ cp .env.example .env.local     # llena AUTH_SECRET, ADMIN_EMAIL y ADMIN_PASSWORD
 npm run dev                    # http://localhost:3000
 ```
 
-La pestaña **Conversaciones** (Chatwoot dentro de Pulso CRM) solo aparece si defines `CHATWOOT_PUBLIC_URL` y tu Chatwoot permite mostrarse dentro de otra página. En tu propio servidor la instalación lo deja configurado. Con Chatwoot en la nube (app.chatwoot.com) probablemente no lo permita y no puedes cambiarlo: ahí usa el botón de abrirlo en otra pestaña.
-
 Sin `DATABASE_URL` usa una base de datos embebida en la carpeta `.data` (solo para pruebas locales; en Vercel la variable es obligatoria).
 
-Prueba automática con un Chatwoot simulado (71 comprobaciones). Enciende el servidor con `npm run build` y `npx next start -p 3100`, con estas variables: `WEBHOOK_TOKEN=whtok`, `CHATWOOT_URL=http://localhost:4010`, `CHATWOOT_ACCOUNT_ID=1`, `CHATWOOT_API_TOKEN=tok`, `CHATWOOT_WEBHOOK_SECRET=secreto-de-prueba`, `CHATWOOT_PUBLIC_URL=https://chat.ejemplo.com`, `ADMIN_EMAIL=admin@prueba.cr`, `ADMIN_PASSWORD=clave-segura-123`. Luego ejecuta `node scripts/test.mjs`.
+Prueba automática con un Chatwoot y un Meta simulados (119 comprobaciones). Enciende el servidor con una base de datos nueva (`npm run build` y `npx next start -p 3100`) con estas variables: `AUTH_SECRET` (cualquier texto largo), `WEBHOOK_TOKEN=whtok`, `CHATWOOT_URL=http://localhost:4010`, `CHATWOOT_ACCOUNT_ID=1`, `CHATWOOT_API_TOKEN=tok`, `CHATWOOT_WEBHOOK_SECRET=secreto-de-prueba`, `WHATSAPP_TOKEN=watok`, `WHATSAPP_PHONE_ID=PHID`, `META_APP_SECRET=appsecret`, `META_VERIFY_TOKEN=verifytok`, `META_GRAPH_URL=http://localhost:4010/graph`, `ADMIN_EMAIL=admin@prueba.cr`, `ADMIN_PASSWORD=clave-segura-123`. Luego ejecuta `node scripts/test.mjs`.
 
 ## Estructura
 
 - `ui/` interfaz (HTML y JavaScript). `scripts/build-ui.mjs` la empaqueta en `src/lib/ui.ts` al correr `dev` o `build`.
-- `src/lib/api.ts` rutas de la API. `src/lib/webhook.ts` y `src/lib/chatwoot.ts` integración con Chatwoot.
+- `src/lib/api.ts` rutas de la API. `src/lib/meta.ts` WhatsApp directo con Meta. `src/lib/webhook.ts` y `src/lib/chatwoot.ts` integración con Chatwoot.
 - `src/lib/db.ts` esquema de la base de datos. `src/lib/auth.ts` sesiones y contraseñas.

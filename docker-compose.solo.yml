@@ -1,0 +1,62 @@
+# Pulso CRM solo (sin Chatwoot): WhatsApp se conecta directo con Meta. Necesita unos 512 MB de memoria.
+# Uso:  cp .env.solo.example .env   (llena lo que dice CAMBIAR)   y luego:   docker compose -f docker-compose.solo.yml up -d --build
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      CRM_DOMAIN: ${CRM_DOMAIN:?falta CRM_DOMAIN en .env}
+      ACME_EMAIL: ${ADMIN_EMAIL:?falta ADMIN_EMAIL en .env}
+    volumes:
+      - ./Caddyfile.solo:/etc/caddy/Caddyfile:ro
+      - solo_caddy_data:/data
+      - solo_caddy_config:/config
+    depends_on:
+      - pulso
+
+  pulso:
+    build: .
+    image: pulso-crm:local
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://pulso:${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD en .env}@postgres:5432/pulso
+      AUTH_SECRET: ${AUTH_SECRET:?falta AUTH_SECRET en .env}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?falta ADMIN_PASSWORD en .env}
+      WHATSAPP_TOKEN: ${WHATSAPP_TOKEN:-}
+      WHATSAPP_PHONE_ID: ${WHATSAPP_PHONE_ID:-}
+      META_APP_SECRET: ${META_APP_SECRET:-}
+      META_VERIFY_TOKEN: ${META_VERIFY_TOKEN:-}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/login').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  postgres:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: pulso
+      POSTGRES_USER: pulso
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - solo_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pulso -d pulso"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  solo_pg_data:
+  solo_caddy_data:
+  solo_caddy_config:

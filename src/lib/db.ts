@@ -83,6 +83,21 @@ create table if not exists ajustes (
   clave text primary key,
   valor text not null
 );
+alter table leads add column if not exists chat_canal text;
+alter table leads add column if not exists chat_id text;
+create unique index if not exists leads_chat_uidx on leads (chat_canal, chat_id) where chat_id is not null;
+alter table mensajes add column if not exists meta_id text;
+alter table mensajes add column if not exists estado text not null default '';
+create unique index if not exists mensajes_meta_uidx on mensajes (meta_id) where meta_id is not null;
+create table if not exists medios (
+  id text primary key,
+  lead_id text not null references leads(id) on delete cascade,
+  mime text not null,
+  nombre text not null default '',
+  data text not null,
+  creado timestamptz not null default now()
+);
+create index if not exists medios_lead_idx on medios (lead_id);
 create table if not exists eventos_cw (
   id serial primary key,
   evento text,

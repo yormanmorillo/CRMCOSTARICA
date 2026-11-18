@@ -77,6 +77,10 @@ else
   poner_env CHATWOOT_ACCOUNT_ID ""
   poner_env CHATWOOT_API_TOKEN ""
   poner_env CHATWOOT_WEBHOOK_SECRET ""
+  poner_env WHATSAPP_TOKEN ""
+  poner_env WHATSAPP_PHONE_ID ""
+  poner_env META_APP_SECRET ""
+  poner_env META_VERIFY_TOKEN "$(azar 24)"
   echo "Archivo .env creado."
 fi
 

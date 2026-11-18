@@ -5,14 +5,33 @@ import http from 'node:http';
 const BASE = process.env.BASE || 'http://localhost:3100';
 const SECRET = process.env.CHATWOOT_WEBHOOK_SECRET || 'secreto-de-prueba';
 const WH = process.env.WEBHOOK_TOKEN || 'whtok';
+const APPSECRET = process.env.META_APP_SECRET || 'appsecret';
+const VERIFY = process.env.META_VERIFY_TOKEN || 'verifytok';
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
 let pass = 0, failN = 0;
 const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { failN++; console.log('  ✗ FALLÓ:', m); } };
 
-// Chatwoot simulado: guarda lo que recibe
+// Chatwoot y Meta (Graph API) simulados: guardan lo que reciben
 const recibidos = [];
+const waEnviados = [];
 const fake = http.createServer((req, res) => {
   let b = ''; req.on('data', (d) => (b += d));
   req.on('end', () => {
+    if (req.url.startsWith('/graph/') || req.url.startsWith('/media/')) {
+      const auth = req.headers.authorization;
+      res.setHeader('content-type', 'application/json');
+      if (auth !== 'Bearer watok') { res.statusCode = 401; return res.end(JSON.stringify({ error: { message: 'token', code: 190 } })); }
+      if (req.url.startsWith('/media/')) { res.setHeader('content-type', 'image/png'); return res.end(PNG); }
+      if (req.method === 'POST' && req.url === '/graph/PHID/messages') {
+        const j = JSON.parse(b); waEnviados.push(j);
+        if (j.to === '50670009999') { res.statusCode = 400; return res.end(JSON.stringify({ error: { message: '(#131047) Re-engagement message', code: 131047 } })); }
+        return res.end(JSON.stringify({ messaging_product: 'whatsapp', messages: [{ id: 'wamid.OUT' + waEnviados.length }] }));
+      }
+      if (req.url.startsWith('/graph/PHID?')) return res.end(JSON.stringify({ display_phone_number: '+506 2222 3333', verified_name: 'Hotel Prueba' }));
+      if (req.url === '/graph/MEDIA_ROTO') { res.statusCode = 404; return res.end(JSON.stringify({ error: { message: 'no existe' } })); }
+      if (req.url.startsWith('/graph/MEDIA')) return res.end(JSON.stringify({ url: 'http://localhost:4010/media/' + req.url.split('/').pop(), mime_type: 'image/png', file_size: PNG.length }));
+      res.statusCode = 404; return res.end('{}');
+    }
     recibidos.push({ url: req.url, token: req.headers['api_access_token'], body: b ? JSON.parse(b) : null });
     res.setHeader('content-type', 'application/json');
     if (req.url.includes('/conversations/999/')) { res.statusCode = 422; return res.end(JSON.stringify({ message: 'Fuera de la ventana de 24 horas' })); }
@@ -38,6 +57,17 @@ async function hook(payload, { sign = true, token = WH } = {}) {
   if (sign) { headers['x-chatwoot-timestamp'] = ts; headers['x-chatwoot-signature'] = 'sha256=' + createHmac('sha256', SECRET).update(`${ts}.${raw}`).digest('hex'); }
   return call('POST', `/api/webhooks/chatwoot?token=${token}`, raw, { nocookie: true, headers });
 }
+const waPayload = (msgs, { contacts, statuses, phoneId = 'PHID' } = {}) => ({
+  object: 'whatsapp_business_account',
+  entry: [{ id: 'WABA', changes: [{ field: 'messages', value: { messaging_product: 'whatsapp', metadata: { display_phone_number: '50622223333', phone_number_id: phoneId }, contacts, messages: msgs, statuses } }] }],
+});
+const wm = (o) => ({ from: o.from, id: o.id, timestamp: String(o.ts ?? Math.floor(Date.now() / 1000)), type: o.type || 'text', ...o.extra });
+async function waHook(payload, { sign = true, secret = APPSECRET, raw: rawIn } = {}) {
+  const raw = rawIn ?? JSON.stringify(payload);
+  const headers = sign ? { 'x-hub-signature-256': 'sha256=' + createHmac('sha256', secret).update(raw).digest('hex') } : {};
+  return call('POST', '/api/webhooks/meta', raw, { nocookie: true, headers });
+}
+const waText = (from, id, text, name, ts) => waPayload([wm({ from, id, ts, extra: { text: { body: text } } })], { contacts: [{ wa_id: from, profile: { name } }] });
 const msg = (o) => ({
   event: 'message_created', id: o.id, content: o.content, message_type: o.type ?? 'incoming', private: false, created_at: Math.floor(Date.now() / 1000),
   sender: o.sender, conversation: { id: o.conv, inbox_id: o.inbox ?? 1, channel: o.channel, meta: o.meta }, inbox: { id: o.inbox ?? 1, name: o.inboxName || '' }, attachments: o.attachments,
@@ -53,8 +83,6 @@ const msg = (o) => ({
   ok((await call('GET', '/', undefined, { nocookie: true })).status === 302, 'la página principal redirige al login si no hay sesión');
   ok((await call('GET', '/')).text.includes('Pulso CRM'), 'la página principal carga con sesión');
   ok((await call('GET', '/login')).status === 302, 'el login redirige si ya hay sesión');
-  const stp = (await call('GET', '/api/state')).json;
-  ok(stp.chatwoot.panelUrl === (process.env.EXPECT_PANEL_URL || 'https://chat.ejemplo.com/app/accounts/1/dashboard'), 'el estado trae la dirección del panel de Chatwoot para la pestaña Conversaciones');
 
   console.log('Webhook: seguridad');
   const base = msg({ id: 1, content: 'hola', conv: 10, channel: 'Channel::Whatsapp', sender: { id: 100, name: 'X', type: 'contact' } });
@@ -149,6 +177,118 @@ const msg = (o) => ({
   const manual = await call('POST', '/api/leads', { nombre: 'Manual Sin Chat', canal: 'web' });
   ok((await call('POST', `/api/leads/${manual.json.lead.id}/mensajes`, { texto: 'hola' })).status === 400, 'un lead manual no puede responder por chat');
 
+  console.log('WhatsApp directo: seguridad');
+  const vf = (t) => call('GET', `/api/webhooks/meta?hub.mode=subscribe&hub.verify_token=${t}&hub.challenge=RETO123`, undefined, { nocookie: true });
+  const v1 = await vf(VERIFY);
+  ok(v1.status === 200 && v1.text === 'RETO123', 'Meta verifica el webhook y recibe el reto de vuelta');
+  ok((await vf('otra')).status === 403, 'una clave de verificación incorrecta se rechaza');
+  const base0 = waText('50688887777', 'wamid.A1', 'Hola, quiero precios', 'Carlos Rojas');
+  ok((await waHook(base0, { sign: false })).status === 401, 'sin firma de Meta se rechaza');
+  ok((await waHook(base0, { secret: 'falsa' })).status === 401, 'firma falsa se rechaza');
+  ok((await waHook(null, { raw: '{no es json' })).status === 400, 'JSON inválido (con firma buena) da 400');
+  ok((await waHook({ object: 'instagram', entry: [] })).json.resultado.includes('ignorado'), 'otros tipos de aviso se ignoran sin error');
+
+  console.log('WhatsApp directo: crear leads');
+  const a1 = await waHook(base0);
+  ok(a1.status === 200 && /lead creado/.test(a1.json.resultado), 'mensaje nuevo crea el lead: ' + a1.json?.resultado);
+  ok((await waHook(base0)).json.resultado.includes('repetido'), 'el mismo mensaje dos veces no se duplica');
+  st = (await call('GET', '/api/state')).json;
+  const carlos = st.leads.find((l) => l.nombre === 'Carlos Rojas');
+  ok(carlos && carlos.canal === 'whatsapp' && carlos.tipo === 'cr' && carlos.auto && carlos.tieneChat && carlos.chatCanal === 'whatsapp', 'WhatsApp, costarricense, automático, con chat');
+  ok(carlos.tel === '+50688887777' && carlos.esperando && carlos.interes === 'Hola, quiero precios', 'teléfono, esperando respuesta y primera consulta');
+  ok(st.whatsapp.configurado === true, 'el estado informa que WhatsApp está conectado');
+  ok(carlos.ultimoMsg.txt === 'Hola, quiero precios', 'la lista de chats muestra el último mensaje');
+  await waHook(waText('14155550199', 'wamid.A2', 'Hi, do you have rooms in March?', 'Emma Stone'));
+  st = (await call('GET', '/api/state')).json;
+  const emma = st.leads.find((l) => l.nombre === 'Emma Stone');
+  ok(emma && emma.tipo === 'ext' && /Estados Unidos/.test(emma.pais), 'número +1 se marca extranjero con país: ' + emma?.pais);
+  // un lead cargado a mano con el mismo teléfono (sin 506) se une
+  const man = await call('POST', '/api/leads', { nombre: 'Marta Cargada A Mano', tel: '8888-5555', canal: 'web' });
+  const antes = (await call('GET', '/api/state')).json.leads.length;
+  await waHook(waText('50688885555', 'wamid.A3', 'Soy Marta, escribo por WhatsApp', 'Marta WA'));
+  st = (await call('GET', '/api/state')).json;
+  const marta = st.leads.find((l) => l.id === man.json.lead.id);
+  ok(st.leads.length === antes && marta.tieneChat && marta.nombre === 'Marta Cargada A Mano', 'se une al lead existente por teléfono, sin duplicar ni cambiar el nombre');
+  ok(st.leads.filter((l) => /Marta/.test(l.nombre)).length === 1, 'solo hay una Marta');
+  ok((await waHook(waText('50688880000', 'wamid.A4', 'x', 'Otro', undefined), { sign: true })).status === 200, 'otro contacto entra');
+  ok((await waHook({ ...waText('50688880001', 'wamid.A5', 'no soy tu número', 'Ajeno'), entry: [{ id: 'W', changes: [{ field: 'messages', value: { metadata: { phone_number_id: 'OTRO' }, messages: [wm({ from: '50688880001', id: 'wamid.A5', extra: { text: { body: 'x' } } })] } }] }] })).json.resultado.includes('otro número'), 'avisos de otro número de la misma app se ignoran');
+
+  console.log('WhatsApp directo: tipos de mensaje');
+  const ana2 = '50688887777';
+  const tipos = waPayload([
+    wm({ from: ana2, id: 'wamid.T1', type: 'image', extra: { image: { id: 'MEDIA1', mime_type: 'image/png', caption: 'Miren esta foto' } } }),
+    wm({ from: ana2, id: 'wamid.T2', type: 'audio', extra: { audio: { id: 'MEDIA2', mime_type: 'audio/ogg' } } }),
+    wm({ from: ana2, id: 'wamid.T3', type: 'location', extra: { location: { latitude: 9.93, longitude: -84.08, name: 'Hotel' } } }),
+    wm({ from: ana2, id: 'wamid.T4', type: 'interactive', extra: { interactive: { button_reply: { id: 'b1', title: 'Quiero cotización' } } } }),
+    wm({ from: ana2, id: 'wamid.T5', type: 'reaction', extra: { reaction: { emoji: '👍' } } }),
+    wm({ from: ana2, id: 'wamid.T6', type: 'document', extra: { document: { id: 'MEDIA_ROTO', filename: 'lista.pdf' } } }),
+    wm({ from: ana2, id: 'wamid.T7', type: 'order' }),
+  ], { contacts: [{ wa_id: ana2, profile: { name: 'Carlos Rojas' } }] });
+  const rt = await waHook(tipos);
+  ok(rt.status === 200 && rt.json.resultado.includes('ignorado (reaction)'), 'las reacciones se ignoran: ' + rt.json?.resultado);
+  const mc = (await call('GET', `/api/leads/${carlos.id}/mensajes`)).json;
+  const por = (t) => mc.mensajes.find((m) => m.texto.includes(t));
+  const imgMsg = por('Miren esta foto');
+  ok(imgMsg && imgMsg.adjuntos.length === 1 && imgMsg.adjuntos[0].type === 'image' && /^\/api\/medios\/[a-f0-9]+$/.test(imgMsg.adjuntos[0].url), 'la foto se guarda con su texto y su archivo');
+  const dlm = await fetch(BASE + imgMsg.adjuntos[0].url, { headers: { cookie } });
+  const bytes = Buffer.from(await dlm.arrayBuffer());
+  ok(dlm.status === 200 && dlm.headers.get('content-type') === 'image/png' && bytes.equals(PNG), 'el archivo se puede ver y es idéntico al que mandó el cliente');
+  ok(dlm.headers.get('x-content-type-options') === 'nosniff', 'el archivo se sirve con protección nosniff');
+  ok((await fetch(BASE + imgMsg.adjuntos[0].url)).status !== 200, 'sin sesión no se ve el archivo');
+  ok(mc.mensajes.some((m) => m.adjuntos.some((a) => a.type === 'audio')), 'los audios se guardan');
+  ok(por('Ubicación') && por('maps.google.com/?q=9.93,-84.08'), 'las ubicaciones llegan con enlace al mapa');
+  ok(por('Quiero cotización'), 'las respuestas a botones llegan como texto');
+  ok(por('No se pudo guardar el archivo'), 'si Meta no entrega el archivo se avisa en el mensaje (y el mensaje no se pierde)');
+  ok(por('todavía no muestra'), 'tipos desconocidos dejan un aviso en vez de perderse');
+  ok(!mc.mensajes.some((m) => m.texto.includes('👍')), 'la reacción no se guardó como mensaje');
+  const st2 = (await call('GET', '/api/state')).json.leads.find((l) => l.id === carlos.id);
+  ok(typeof st2.ultimoMsg.txt === 'string' && st2.ultimoMsg.txt.length > 0, 'el último mensaje tiene vista previa aunque sea un archivo');
+  ok(mc.canal === 'whatsapp' && mc.configurado === true && mc.ventana.abierta === true, 'la conversación informa canal, conexión y ventana de 24 h abierta');
+
+  console.log('WhatsApp directo: responder desde Pulso');
+  const rw = await call('POST', `/api/leads/${carlos.id}/mensajes`, { texto: 'Hola Carlos, con gusto le ayudo' });
+  ok(rw.status === 201 && rw.json.mensaje.estado === 'enviado', 'responder desde el CRM funciona');
+  const so = waEnviados.find((x) => x.text?.body === 'Hola Carlos, con gusto le ayudo');
+  ok(so && so.to === '50688887777' && so.type === 'text' && so.messaging_product === 'whatsapp', 'llegó a Meta con el número y el formato correctos');
+  st = (await call('GET', '/api/state')).json;
+  const c2 = st.leads.find((l) => l.id === carlos.id);
+  ok(c2.etapa === 'contactado' && c2.esperando === false && c2.atenciones.length === 1 && c2.atenciones[0].auto, 'al responder pasa a Contactado y se anota la atención del día');
+  // estados de entrega
+  const wamid = 'wamid.OUT' + waEnviados.length;
+  const stt = (s, extra = {}) => waPayload(undefined, { statuses: [{ id: wamid, status: s, recipient_id: '50688887777', ...extra }] });
+  await waHook(stt('delivered'));
+  let ml = (await call('GET', `/api/leads/${carlos.id}/mensajes`)).json.mensajes.find((m) => m.texto.startsWith('Hola Carlos, con gusto'));
+  ok(ml.estado === 'entregado', 'aviso de entregado');
+  await waHook(stt('read'));
+  await waHook(stt('delivered'));
+  ml = (await call('GET', `/api/leads/${carlos.id}/mensajes`)).json.mensajes.find((m) => m.texto.startsWith('Hola Carlos, con gusto'));
+  ok(ml.estado === 'leido', 'leído, y un aviso de entregado que llega tarde no lo retrocede');
+  await waHook(stt('failed', { errors: [{ code: 131047, title: 'Re-engagement message' }] }));
+  ml = (await call('GET', `/api/leads/${carlos.id}/mensajes`)).json.mensajes.find((m) => m.texto.startsWith('Hola Carlos, con gusto'));
+  ok(/^fallo: .*24 horas/.test(ml.estado), 'si falla la entrega se explica el motivo: ' + ml.estado);
+  // regla de las 24 horas
+  await waHook(waText('50687770001', 'wamid.V1', 'hola hace dos días', 'Viejo Contacto', Math.floor(Date.now() / 1000) - 2 * 86400));
+  const viejo = (await call('GET', '/api/state')).json.leads.find((l) => l.nombre === 'Viejo Contacto');
+  const r24 = await call('POST', `/api/leads/${viejo.id}/mensajes`, { texto: 'hola' });
+  ok(r24.status === 409 && /24 horas/.test(r24.json.error), 'pasadas 24 horas no se deja enviar y se explica');
+  ok(!waEnviados.some((x) => x.to === '50687770001'), 'ni siquiera se intenta enviar a Meta');
+  ok((await call('GET', `/api/leads/${viejo.id}/mensajes`)).json.ventana.abierta === false, 'la conversación informa que la ventana está cerrada');
+  // Meta rechaza
+  await waHook(waText('50670009999', 'wamid.R1', 'hola', 'Rechazado'));
+  const rech = (await call('GET', '/api/state')).json.leads.find((l) => l.nombre === 'Rechazado');
+  const rr = await call('POST', `/api/leads/${rech.id}/mensajes`, { texto: 'hola' });
+  ok(rr.status === 502 && /24 horas/.test(rr.json.error), 'si Meta rechaza se muestra el motivo en español: ' + rr.json?.error);
+  ok((await call('POST', `/api/leads/${man.json.lead.id}/mensajes`, { texto: '' })).status === 400, 'mensaje vacío se rechaza');
+
+  console.log('WhatsApp directo: ajustes');
+  const we = (await call('GET', '/api/whatsapp/estado')).json;
+  ok(we.configurado.token && we.configurado.phoneId && we.configurado.secreto && we.configurado.verifyToken, 'el estado muestra qué variables están listas');
+  ok(we.webhookUrl.endsWith('/api/webhooks/meta') && we.verifyToken === VERIFY && we.recientes.length > 0, 'muestra la dirección del webhook, la clave y los avisos recientes');
+  ok(!JSON.stringify(we).includes('watok') && !JSON.stringify(we).includes(APPSECRET), 'el estado no revela el token ni el secreto de la app');
+  const pb = await call('POST', '/api/whatsapp/probar');
+  ok(pb.status === 200 && pb.json.numero === '+506 2222 3333' && pb.json.nombre === 'Hotel Prueba', 'probar la conexión muestra el número conectado');
+  ok(!(await call('GET', '/api/chatwoot/estado')).json.recientes.some((e) => e.evento === 'whatsapp'), 'los avisos de WhatsApp no se mezclan con los de Chatwoot');
+
   console.log('Funciones del CRM');
   const nl = await call('POST', '/api/leads', { nombre: 'Prueba Extranjero', tipo: 'ext', pais: 'Canadá', cedula: 'no-debe-guardarse', llegada: '2030-01-20', avisoDias: 5, canal: 'instagram' });
   ok(nl.status === 201 && nl.json.lead.cedula === '' && nl.json.lead.pais === 'Canadá', 'crear lead extranjero (limpia campos de costarricense)');
@@ -181,7 +321,11 @@ const msg = (o) => ({
   ok((await call('PATCH', '/api/ajustes', { negocio: 'X' }, { nocookie: true, headers: { cookie: vend } })).status === 403, 'el vendedor no puede cambiar ajustes');
   ok((await call('GET', '/api/usuarios', undefined, { nocookie: true, headers: { cookie: vend } })).status === 403, 'el vendedor no ve la lista de usuarios');
   ok((await call('GET', '/api/chatwoot/estado', undefined, { nocookie: true, headers: { cookie: vend } })).status === 403, 'el vendedor no ve la conexión de Chatwoot');
+  ok((await call('GET', '/api/whatsapp/estado', undefined, { nocookie: true, headers: { cookie: vend } })).status === 403, 'el vendedor no ve la conexión de WhatsApp');
+  ok((await call('POST', '/api/whatsapp/probar', undefined, { nocookie: true, headers: { cookie: vend } })).status === 403, 'el vendedor no puede probar la conexión');
   ok((await call('GET', '/api/state', undefined, { nocookie: true, headers: { cookie: vend } })).status === 200, 'el vendedor sí ve los leads');
+  const vm = await fetch(BASE + imgMsg.adjuntos[0].url, { headers: { cookie: vend } });
+  ok(vm.status === 200, 'el vendedor sí ve los archivos de las conversaciones');
   ok((await call('PATCH', '/api/ajustes', { negocio: 'Hotel Prueba', avisoDias: 3 })).json.settings.negocio === 'Hotel Prueba', 'el admin cambia el nombre del negocio');
   const est = (await call('GET', '/api/chatwoot/estado')).json;
   ok(est.webhookUrl?.includes('/api/webhooks/chatwoot?token=') && est.configurado.token && est.recientes.length > 0, 'estado de Chatwoot con dirección del webhook y avisos recientes');

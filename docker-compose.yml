@@ -57,10 +57,14 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?falta ADMIN_PASSWORD en .env}
       WEBHOOK_TOKEN: ${WEBHOOK_TOKEN:?falta WEBHOOK_TOKEN en .env}
       CHATWOOT_URL: http://rails:3000 # dentro del servidor se habla directo, sin salir a internet
-      CHATWOOT_PUBLIC_URL: https://${CHAT_DOMAIN} # para mostrar Chatwoot en la pestaña Conversaciones
       CHATWOOT_ACCOUNT_ID: ${CHATWOOT_ACCOUNT_ID:-}
       CHATWOOT_API_TOKEN: ${CHATWOOT_API_TOKEN:-}
       CHATWOOT_WEBHOOK_SECRET: ${CHATWOOT_WEBHOOK_SECRET:-}
+      # WhatsApp directo con Meta (opcional; ver WHATSAPP.md)
+      WHATSAPP_TOKEN: ${WHATSAPP_TOKEN:-}
+      WHATSAPP_PHONE_ID: ${WHATSAPP_PHONE_ID:-}
+      META_APP_SECRET: ${META_APP_SECRET:-}
+      META_VERIFY_TOKEN: ${META_VERIFY_TOKEN:-}
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3000/login').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
       interval: 30s

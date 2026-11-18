@@ -1,0 +1,9 @@
+# HTTPS automático (certificado gratis de Let's Encrypt) para Pulso CRM solo.
+{
+	email {$ACME_EMAIL}
+}
+
+{$CRM_DOMAIN} {
+	encode gzip
+	reverse_proxy pulso:3000
+}

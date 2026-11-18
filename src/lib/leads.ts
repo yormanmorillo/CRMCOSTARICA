@@ -1,5 +1,6 @@
 import { q } from './db';
 import { cwConfig } from './chatwoot';
+import { waConfig } from './meta';
 import type { User } from './auth';
 
 export const CANALES = ['whatsapp', 'web', 'instagram', 'facebook', 'otro'];
@@ -40,9 +41,10 @@ function mapLead(r: any, atenciones: any[], archivos: any[], ult: any) {
     avisado: r.avisado,
     creado: r.creado,
     auto: r.auto,
-    tieneChat: !!r.cw_conversation_id,
+    tieneChat: !!(r.chat_id || r.cw_conversation_id),
+    chatCanal: r.chat_id ? r.chat_canal || '' : r.cw_conversation_id ? 'chatwoot' : '',
     esperando: !!ult && ult.direccion === 'in',
-    ultimoMsg: ult ? { dir: ult.direccion, at: ult.creado } : null,
+    ultimoMsg: ult ? { dir: ult.direccion, at: ult.creado, txt: ult.txt || ({ image: '📷 Foto', audio: '🎤 Audio', video: '🎥 Video', document: '📄 Documento' } as Record<string, string>)[ult.adj] || '' } : null,
     atenciones,
     archivos,
   };
@@ -64,7 +66,7 @@ export async function loadState(user: User) {
     q('select id, lead_id, fecha, canal, nota, auto from atenciones order by fecha, creado'),
     q('select id, lead_id, nombre from archivos order by creado'),
     q('select * from tareas order by fecha, hora'),
-    q('select distinct on (lead_id) lead_id, direccion, creado from mensajes order by lead_id, creado desc, n desc'),
+    q('select distinct on (lead_id) lead_id, direccion, creado, left(texto, 90) as txt, adjuntos->0->>\'type\' as adj from mensajes order by lead_id, creado desc, n desc'),
     getSettings(),
   ]);
   const group = (rows: any[], f: (r: any) => any) => {
@@ -82,7 +84,8 @@ export async function loadState(user: User) {
   return {
     me: user,
     settings,
-    chatwoot: { configurado: cwConfig().ok, panelUrl: cwConfig().panelUrl },
+    chatwoot: { configurado: cwConfig().ok },
+    whatsapp: { configurado: waConfig().ok },
     leads: leads.map((r) => mapLead(r, gA.get(r.id) || [], gF.get(r.id) || [], gU.get(r.id))),
     tasks: tareas.map(mapTarea),
   };
@@ -94,7 +97,7 @@ export async function loadLead(id: string) {
   const [aten, arch, ult] = await Promise.all([
     q('select id, lead_id, fecha, canal, nota, auto from atenciones where lead_id=$1 order by fecha, creado', [id]),
     q('select id, nombre from archivos where lead_id=$1 order by creado', [id]),
-    q('select direccion, creado from mensajes where lead_id=$1 order by creado desc, n desc limit 1', [id]),
+    q('select direccion, creado, left(texto, 90) as txt, adjuntos->0->>\'type\' as adj from mensajes where lead_id=$1 order by creado desc, n desc limit 1', [id]),
   ]);
   return mapLead(r, aten.map(mapAtencion), arch, ult[0]);
 }

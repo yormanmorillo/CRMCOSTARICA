@@ -232,9 +232,46 @@ footer{margin-top:28px;color:var(--muted);font-size:12px}
 @media(max-width:560px){.t-largo{display:none}.t-corto{display:inline}}
 @media(max-width:560px){.tabs button{padding:8px 5px;font-size:13px;gap:5px}.tabs .badge{padding:1px 5px;min-width:16px}}
 .who{font-size:13px;color:var(--muted)}
-.chatbar{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-bottom:10px}
-.chatbar p{margin:0;flex:1 1 280px}
-.chatframe{display:block;width:100%;height:calc(100vh - 190px);min-height:520px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+/* Bandeja de conversaciones */
+.inbox{display:grid;grid-template-columns:minmax(260px,340px) minmax(0,1fr);gap:12px;height:calc(100vh - 150px);min-height:480px}
+.ib-list,.ib-thread{background:var(--surface);border:1px solid var(--line);border-radius:12px;min-width:0;display:flex;flex-direction:column;overflow:hidden}
+.ib-tools{padding:10px;display:flex;flex-direction:column;gap:8px;border-bottom:1px solid var(--line)}
+.ib-tools .seg{display:flex}.ib-tools .seg button{flex:1;display:inline-flex;gap:6px;align-items:center;justify-content:center}
+.ib-items{overflow-y:auto;flex:1}
+.ib-it{display:flex;gap:10px;padding:10px 12px;border:0;border-bottom:1px solid var(--line);cursor:pointer;align-items:flex-start;width:100%;text-align:left;background:transparent}
+.ib-it:hover{background:var(--surface-2)}
+.ib-it[aria-current="true"]{background:var(--accent-soft)}
+.ib-it .im{flex:1;min-width:0}
+.ib-it .l1{display:flex;gap:8px;justify-content:space-between;align-items:baseline}
+.ib-it b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ib-it .tm{font-size:11px;color:var(--muted);white-space:nowrap}
+.ib-it .pv{color:var(--muted);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}
+.ib-it.wait .pv{color:var(--fg);font-weight:600}
+.ib-it .l3{display:flex;gap:6px;align-items:center;margin-top:4px}
+.ib-dot{width:9px;height:9px;border-radius:50%;background:var(--crit);flex:none}
+.ib-head{display:flex;gap:10px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line)}
+.ib-head .id{flex:1;min-width:0}
+.ib-head .id b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chat>*{flex:none}
+.ib-thread .chat{flex:1;min-height:0;max-height:none;border-radius:0}
+.ib-thread .reply{padding:10px 12px 4px;margin:0;border-top:1px solid var(--line)}
+.ib-thread .ib-hint{padding:0 12px 10px;display:block}
+.ib-empty{margin:auto;padding:28px;text-align:center;color:var(--muted);max-width:340px}
+.ib-empty b{display:block;color:var(--fg);font-family:var(--font-display);font-size:16px;margin-bottom:6px}
+.ib-back{display:none}
+@media(max-width:860px){
+  .inbox{grid-template-columns:minmax(0,1fr);height:calc(100vh - 175px)}
+  .inbox .ib-thread{display:none}
+  .inbox.abierto .ib-list{display:none}
+  .inbox.abierto .ib-thread{display:flex}
+  .ib-back{display:inline-flex}
+}
+.msg audio{width:100%;min-width:200px;margin-top:6px}
+.msg video{max-width:100%;border-radius:8px;display:block;margin-top:6px}
+.msg .fl-adj{display:inline-block;margin-top:6px;text-decoration:underline}
+.msg .est{display:block;margin-top:3px;font-size:12px;opacity:.85}
+.msg .est.mal{opacity:1;font-weight:600;text-decoration:underline dotted}
+.msg:has(.est.mal){outline:2px solid var(--crit)}
 @media(max-width:560px){.who{display:none}}
 </style>
 </head><body>
@@ -249,7 +286,7 @@ footer{margin-top:28px;color:var(--muted);font-size:12px}
       <button data-action="nav" data-view="panel">Panel <span class="badge" id="bdg" hidden></span></button>
       <button data-action="nav" data-view="leads">Leads</button>
       <button data-action="nav" data-view="calendario">Calendario</button>
-      <button data-action="nav" data-view="conversaciones" id="tabChat" hidden><span class="t-largo">Conversaciones</span><span class="t-corto">Chats</span> <span class="badge" id="bdgChat" hidden></span></button>
+      <button data-action="nav" data-view="conversaciones" id="tabChat"><span class="t-largo">Conversaciones</span><span class="t-corto">Chats</span> <span class="badge" id="bdgChat" hidden></span></button>
     </nav>
     <div class="actions">
       <span class="who" id="who"></span><button class="btn" data-action="settings">Ajustes</button><button class="btn" data-action="logout">Salir</button>
@@ -280,12 +317,19 @@ footer{margin-top:28px;color:var(--muted);font-size:12px}
     </section>
 
     <section id="v-conversaciones" class="view" aria-label="Conversaciones" hidden>
-      <div class="chatbar">
-        <p class="muted" id="chatNote">Aquí está tu Chatwoot, con todos tus canales. Los leads nuevos aparecen solos en Pulso CRM.</p>
-        <a class="btn sm" id="chatOpen" href="#" target="_blank" rel="noopener">Abrir en una pestaña nueva</a>
+      <div class="inbox" id="inbox">
+        <div class="ib-list">
+          <div class="ib-tools">
+            <input id="ibq" class="in" type="search" placeholder="Buscar conversación" aria-label="Buscar conversación">
+            <div class="seg" role="group" aria-label="Filtro de conversaciones">
+              <button data-action="ib-filtro" data-f="todas">Todas</button>
+              <button data-action="ib-filtro" data-f="sin">Sin responder <span class="badge" id="ibSin" hidden></span></button>
+            </div>
+          </div>
+          <div class="ib-items" id="ibList"></div>
+        </div>
+        <div class="ib-thread" id="ibThread"></div>
       </div>
-      <iframe id="chatFrame" class="chatframe" title="Chatwoot" referrerpolicy="strict-origin-when-cross-origin" allow="clipboard-write; microphone; notifications"></iframe>
-      <p class="muted" style="margin:8px 0 0;font-size:12px">Si ves una pantalla en blanco o te pide entrar otra vez, abre Chatwoot en una pestaña nueva con el botón de arriba.</p>
     </section>
 
     <section id="v-calendario" class="view" aria-label="Calendario" hidden>

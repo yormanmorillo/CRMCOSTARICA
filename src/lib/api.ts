@@ -4,6 +4,7 @@ import { getUser, login, sessionCookie, clearCookie, hashPassword, type User } f
 import { loadState, loadLead, getSettings, setSetting, mapTarea, CANALES, ETAPAS, TIPOS } from './leads';
 import { cwConfig, enviarMensaje, verifySignature } from './chatwoot';
 import { procesarEvento, registrarRespuesta } from './webhook';
+import { enviarWhatsApp, probarWhatsApp, procesarMeta, verifyMetaSignature, ventanaWhatsApp, waConfig } from './meta';
 
 type Ctx = { req: Request; url: URL; params: Record<string, string>; user: User | null };
 type Handler = (c: Ctx) => Promise<Response>;
@@ -178,20 +179,48 @@ route('DELETE', '/archivos/:id', async ({ params }) => {
 });
 
 /* ---------- Conversaciones ---------- */
+const tieneChat = (l: any) => !!(l.chat_id || l.cw_conversation_id);
+const porWhatsApp = (l: any) => l.chat_canal === 'whatsapp' && !!l.chat_id;
+
 route('GET', '/leads/:id/mensajes', async ({ params }) => {
   const lead = await mustLead(params.id);
   const rows = await q(
-    'select id, direccion, texto, autor, adjuntos, creado from mensajes where lead_id=$1 order by creado asc, n asc limit 300',
+    'select id, direccion, texto, autor, adjuntos, estado, creado from mensajes where lead_id=$1 order by creado asc, n asc limit 300',
     [params.id],
   );
-  return json({ mensajes: rows, tieneChat: !!lead.cw_conversation_id, configurado: cwConfig().ok });
+  const wa = porWhatsApp(lead);
+  return json({
+    mensajes: rows,
+    tieneChat: tieneChat(lead),
+    canal: wa ? 'whatsapp' : lead.cw_conversation_id ? 'chatwoot' : '',
+    configurado: wa ? waConfig().ok : cwConfig().ok,
+    ventana: wa ? await ventanaWhatsApp(lead.id) : null,
+  });
 });
 
 route('POST', '/leads/:id/mensajes', async ({ req, params, user }) => {
   const lead = await mustLead(params.id);
   const texto = str((await body(req)).texto, 4000);
   if (!texto) throw new HttpError(400, 'Escribe el mensaje');
-  if (!lead.cw_conversation_id) throw new HttpError(400, 'Este lead no tiene una conversación de Chatwoot');
+  if (!tieneChat(lead)) throw new HttpError(400, 'Este lead todavía no tiene una conversación');
+
+  if (porWhatsApp(lead)) {
+    const v = await ventanaWhatsApp(lead.id);
+    if (!v.abierta) {
+      throw new HttpError(409, 'Pasaron más de 24 horas desde el último mensaje del cliente. WhatsApp solo permite responder después con una plantilla aprobada por Meta. Espera a que el cliente escriba de nuevo.');
+    }
+    const wamid = await enviarWhatsApp(lead.chat_id, texto);
+    const rows = await q(
+      `insert into mensajes(id, lead_id, meta_id, direccion, texto, autor, estado)
+       values($1,$2,$3,'out',$4,$5,'enviado')
+       on conflict do nothing
+       returning id, direccion, texto, autor, adjuntos, estado, creado`,
+      [uid(), lead.id, wamid || null, texto, user!.nombre],
+    );
+    await registrarRespuesta(lead);
+    return json({ mensaje: rows[0] || null }, 201);
+  }
+
   const r = await enviarMensaje(lead.cw_conversation_id, texto);
   const cwId = r?.id != null ? String(r.id) : null;
   const id = uid();
@@ -199,11 +228,30 @@ route('POST', '/leads/:id/mensajes', async ({ req, params, user }) => {
     `insert into mensajes(id, lead_id, cw_message_id, cw_conversation_id, direccion, texto, autor)
      values($1,$2,$3,$4,'out',$5,$6)
      on conflict (cw_message_id) do update set autor = excluded.autor
-     returning id, direccion, texto, autor, adjuntos, creado`,
+     returning id, direccion, texto, autor, adjuntos, estado, creado`,
     [id, lead.id, cwId, lead.cw_conversation_id, texto, user!.nombre],
   );
   await registrarRespuesta(lead);
   return json({ mensaje: rows[0] }, 201);
+});
+
+/* ---------- Archivos que mandan los clientes por WhatsApp ---------- */
+const MIME_VISIBLE = /^(image\/(jpeg|png|webp|gif)|audio\/(ogg|mpeg|mp4|aac|amr)|video\/(mp4|3gpp)|application\/pdf)$/;
+
+route('GET', '/medios/:id', async ({ params }) => {
+  const r = (await q('select mime, nombre, data from medios where id=$1', [params.id]))[0];
+  if (!r) throw new HttpError(404, 'Archivo no encontrado');
+  const visible = MIME_VISIBLE.test(r.mime);
+  const nombre = String(r.nombre || 'archivo').replace(/[^\w.\- ]/g, '_');
+  return new Response(Buffer.from(r.data, 'base64'), {
+    headers: {
+      'content-type': visible ? r.mime : 'application/octet-stream',
+      'content-disposition': `${visible ? 'inline' : 'attachment'}; filename="${nombre}"`,
+      'x-content-type-options': 'nosniff',
+      'content-security-policy': 'sandbox',
+      'cache-control': 'private, max-age=86400',
+    },
+  });
 });
 
 /* ---------- Ajustes y usuarios ---------- */
@@ -241,7 +289,7 @@ route('GET', '/chatwoot/estado', async ({ req }) => {
   const token = process.env.WEBHOOK_TOKEN || '';
   const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || new URL(req.url).host;
   const proto = req.headers.get('x-forwarded-proto') || new URL(req.url).protocol.replace(':', '');
-  const recientes = await q('select id, evento, resultado, creado from eventos_cw order by id desc limit 15');
+  const recientes = await q("select id, evento, resultado, creado from eventos_cw where evento <> 'whatsapp' order by id desc limit 15");
   return json({
     configurado: {
       url: c.url,
@@ -255,9 +303,9 @@ route('GET', '/chatwoot/estado', async ({ req }) => {
   });
 }, { admin: true });
 
-async function guardarEvento(payload: any, resultado: string) {
+async function guardarEvento(payload: any, resultado: string, evento?: string) {
   await q('insert into eventos_cw(evento, payload, resultado) values($1,$2::jsonb,$3)', [
-    String(payload?.event || ''),
+    evento || String(payload?.event || ''),
     JSON.stringify(payload).slice(0, 60000) === JSON.stringify(payload) ? JSON.stringify(payload) : JSON.stringify({ recortado: true }),
     resultado,
   ]);
@@ -284,6 +332,53 @@ route('POST', '/webhooks/chatwoot', async ({ req, url }) => {
     throw e;
   }
   await guardarEvento(payload, resultado);
+  return json({ ok: true, resultado });
+}, { public: true, webhook: true });
+
+/* ---------- WhatsApp (conexión directa con Meta) ---------- */
+route('GET', '/whatsapp/estado', async ({ req }) => {
+  const c = waConfig();
+  const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || new URL(req.url).host;
+  const proto = req.headers.get('x-forwarded-proto') || new URL(req.url).protocol.replace(':', '');
+  const recientes = await q("select id, evento, resultado, creado from eventos_cw where evento = 'whatsapp' order by id desc limit 15");
+  return json({
+    configurado: { token: !!c.token, phoneId: !!c.phoneId, secreto: !!c.secret, verifyToken: !!c.verify },
+    webhookUrl: `${proto}://${host}/api/webhooks/meta`,
+    verifyToken: c.verify || null,
+    recientes,
+  });
+}, { admin: true });
+
+route('POST', '/whatsapp/probar', async () => json(await probarWhatsApp()), { admin: true });
+
+// Meta llama a esta dirección una sola vez, al guardar el webhook, para comprobar que la clave coincide.
+route('GET', '/webhooks/meta', async ({ url }) => {
+  const { verify } = waConfig();
+  if (!verify) throw new HttpError(503, 'Falta la variable META_VERIFY_TOKEN');
+  const ok = url.searchParams.get('hub.mode') === 'subscribe' && safeEqual(url.searchParams.get('hub.verify_token') || '', verify);
+  if (!ok) throw new HttpError(403, 'Clave de verificación no válida');
+  return new Response(url.searchParams.get('hub.challenge') || '', { headers: { 'content-type': 'text/plain; charset=utf-8' } });
+}, { public: true, webhook: true });
+
+route('POST', '/webhooks/meta', async ({ req }) => {
+  if (!waConfig().secret) throw new HttpError(503, 'Falta la variable META_APP_SECRET');
+  const raw = await req.text();
+  if (!verifyMetaSignature(raw, req.headers)) throw new HttpError(401, 'Firma no válida');
+  let payload: any;
+  try {
+    payload = JSON.parse(raw);
+  } catch {
+    throw new HttpError(400, 'JSON no válido');
+  }
+  let resultado = '';
+  try {
+    resultado = await procesarMeta(payload);
+  } catch (e: any) {
+    await guardarEvento(payload, 'error: ' + (e?.message || 'desconocido'), 'whatsapp').catch(() => {});
+    // Meta reintenta los avisos que no reciben 200. Los mensajes repetidos se descartan solos.
+    throw e;
+  }
+  await guardarEvento(payload, resultado, 'whatsapp');
   return json({ ok: true, resultado });
 }, { public: true, webhook: true });
 

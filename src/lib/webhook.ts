@@ -14,7 +14,7 @@ export async function registrarRespuesta(lead: { id: string; etapa: string; cana
   const ya = await q('select 1 from atenciones where lead_id=$1 and fecha=$2 and auto=true limit 1', [lead.id, hoy]);
   if (!ya.length) {
     await q('insert into atenciones(id, lead_id, fecha, canal, nota, auto) values($1,$2,$3,$4,$5,true)', [
-      uid(), lead.id, hoy, lead.canal, 'Se respondió desde la conversación de Chatwoot.',
+      uid(), lead.id, hoy, lead.canal, 'Se respondió desde la conversación en Pulso CRM.',
     ]);
   }
 }

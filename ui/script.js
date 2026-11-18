@@ -47,7 +47,7 @@ function api(method,path,data){
 }
 function fail(e){toast(e&&e.message?e.message:'Algo salió mal')}
 
-var S={leads:[],tasks:[],settings:{negocio:'Pulso CRM',avisoDias:5},me:{nombre:'',rol:'vendedor'},chatwoot:{configurado:false}};
+var S={leads:[],tasks:[],settings:{negocio:'Pulso CRM',avisoDias:5},me:{nombre:'',rol:'vendedor'},chatwoot:{configurado:false},whatsapp:{configurado:false}};
 var lead=function(id){return S.leads.filter(function(l){return l.id===id})[0]};
 function put(l){var i=S.leads.findIndex(function(x){return x.id===l.id});if(i>-1)S.leads[i]=l;else S.leads.unshift(l)}
 var activo=function(l){return l.etapa!=='ganado'&&l.etapa!=='perdido'};
@@ -80,12 +80,13 @@ var autoTag=function(l){return l.auto?'<span class="tag" title="Se creó sola cu
 var view='panel',openId=null,syncing=false,loaded=false,sig='';
 var F={q:'',canal:'',tipo:'',etapa:'',vista:'lista'};
 var C={y:parse(today()).getFullYear(),m:parse(today()).getMonth(),sel:today()};
-var chatSig='';
+var ibId=null,IB={f:'todas',q:''};
+var CH={dr:{box:'chatBox',hint:'replyHint',btn:'replyBtn',ta:'replyText'},ib:{box:'ibBox',hint:'ibHint',btn:'ibBtn',ta:'ibText'}};
 
 function toast(msg){var el=$('#toast');el.textContent=msg;el.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(function(){el.hidden=true},3800)}
 function lockScroll(){document.body.style.overflow=$$('.ov').some(function(o){return !o.hidden})?'hidden':''}
 function showOv(id){$('#'+id).hidden=false;lockScroll()}
-function closeOv(id){$('#'+id).hidden=true;if(id==='drawerOv'){openId=null;chatSig='';renderAll()}lockScroll()}
+function closeOv(id){$('#'+id).hidden=true;if(id==='drawerOv'){openId=null;renderAll()}lockScroll()}
 function applyBrand(){
   $('#brandName').textContent=S.settings.negocio||'Pulso CRM';
   document.title=(S.settings.negocio||'Pulso CRM');
@@ -140,7 +141,7 @@ function renderPanel(){
   var canales=CANALES.map(function(c){var n=cnt(function(l){return l.canal===c[0]});return '<div class="bar-row"><span>'+c[1]+'</span><div class="bar"><i style="width:'+(n/maxC*100)+'%;background:var(--'+colorCanal[c[0]]+')"></i></div><span class="v">'+n+'</span></div>'}).join('');
   var nCr=cnt(function(l){return l.tipo==='cr'}),nEx=cnt(function(l){return l.tipo==='ext'}),tot=Math.max(1,nCr+nEx);
 
-  var vacio=S.leads.length?'':'<div class="card" style="margin-bottom:16px"><h2>Todavía no hay leads</h2><p class="sub">Cuando alguien escriba por WhatsApp, Instagram, Facebook o la web, aparecerá aquí solo. También puedes crear uno con el botón “Nuevo lead”.'+(S.chatwoot.configurado?'':' Para recibirlos automáticamente, conecta Chatwoot en Ajustes.')+'</p></div>';
+  var vacio=S.leads.length?'':'<div class="card" style="margin-bottom:16px"><h2>Todavía no hay leads</h2><p class="sub">Cuando alguien escriba por WhatsApp, Instagram, Facebook o la web, aparecerá aquí solo. También puedes crear uno con el botón “Nuevo lead”.'+(S.whatsapp.configurado||S.chatwoot.configurado?'':' Para recibirlos automáticamente, conecta WhatsApp en Ajustes.')+'</p></div>';
 
   $('#v-panel').innerHTML=vacio+kpis+
     '<div class="grid2"><div class="stack">'+
@@ -256,28 +257,69 @@ function renderAll(){
   if(view==='panel')renderPanel();
   if(view==='leads')renderLeads();
   if(view==='calendario')renderCal();
+  if(view==='conversaciones')renderInbox();
 }
 function setView(v){
   var vistas=['panel','leads','calendario','conversaciones'];
-  if(vistas.indexOf(v)<0||(v==='conversaciones'&&!S.chatwoot.panelUrl))v='panel';
+  if(vistas.indexOf(v)<0)v='panel';
   view=v;
   vistas.forEach(function(x){$('#v-'+x).hidden=x!==v});
-  if(v==='conversaciones')cargarChat();
   $$('.tabs button').forEach(function(b){if(b.dataset.view===v)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
   renderAll();
 }
-/* ---------- Pestaña Conversaciones: Chatwoot dentro de Pulso CRM ---------- */
-function cargarChat(){
-  var f=$('#chatFrame'),u=S.chatwoot.panelUrl;
-  if(!f||!u)return;
-  if(f.getAttribute('src')!==u&&!f.dataset.listo){f.dataset.listo='1';f.setAttribute('src',u)}
-  $('#chatOpen').setAttribute('href',u);
-}
+/* ---------- Pestaña Conversaciones: la bandeja de Pulso CRM ---------- */
 function ajustarPestanaChat(){
-  var t=$('#tabChat');if(!t)return;
-  t.hidden=!S.chatwoot.panelUrl;
-  var n=S.leads.filter(function(l){return l.esperando&&activo(l)}).length;
+  var n=S.leads.filter(function(l){return l.tieneChat&&l.esperando&&activo(l)}).length;
   var b=$('#bdgChat');b.hidden=!n;b.textContent=n;
+}
+function convs(){
+  var q=IB.q.trim().toLowerCase();
+  return S.leads.filter(function(l){return l.tieneChat}).filter(function(l){
+    if(IB.f==='sin'&&!(l.esperando&&activo(l)))return false;
+    if(q&&(l.nombre+' '+l.tel+' '+(l.ultimoMsg?l.ultimoMsg.txt:'')).toLowerCase().indexOf(q)<0)return false;
+    return true;
+  }).sort(function(a,b){var x=a.ultimoMsg?a.ultimoMsg.at:'',y=b.ultimoMsg?b.ultimoMsg.at:'';return x<y?1:x>y?-1:0});
+}
+function renderInboxList(){
+  var el=$('#ibList');if(!el)return;
+  var total=S.leads.filter(function(l){return l.tieneChat}).length;
+  var n=S.leads.filter(function(l){return l.tieneChat&&l.esperando&&activo(l)}).length;
+  var sb=$('#ibSin');sb.hidden=!n;sb.textContent=n;
+  $$('[data-action="ib-filtro"]').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.f===IB.f))});
+  var list=convs(),top=el.scrollTop;
+  if(!list.length){
+    el.innerHTML=total?'<div class="ib-empty">No hay conversaciones con ese filtro.</div>':
+      (S.whatsapp.configurado||S.chatwoot.configurado?
+        '<div class="ib-empty"><b>Todavía no hay conversaciones</b>Cuando un cliente escriba por WhatsApp, su mensaje aparecerá aquí y su lead se creará solo.</div>':
+        '<div class="ib-empty"><b>Falta conectar WhatsApp</b>'+(S.me.rol==='admin'?'Abre Ajustes y sigue los pasos de “WhatsApp” para recibir aquí los mensajes de tus clientes.':'Pídele al administrador que conecte WhatsApp en Ajustes.')+'</div>');
+    return;
+  }
+  el.innerHTML=list.map(function(l){
+    var u=l.ultimoMsg,wait=l.esperando&&activo(l);
+    return '<button class="ib-it'+(wait?' wait':'')+'" data-action="ib-open" data-id="'+l.id+'"'+(l.id===ibId?' aria-current="true"':'')+'><span class="av">'+esc(ini(l.nombre))+'</span><div class="im"><div class="l1"><b>'+esc(l.nombre||'Sin nombre')+'</b><span class="tm">'+(u?esc(ago(u.at)):'')+'</span></div><div class="pv">'+(u?(u.dir==='out'?'Tú: ':'')+esc(u.txt||'Mensaje'):'Sin mensajes todavía')+'</div><div class="l3">'+canalChip(l.canal)+(wait?'<span class="ib-dot" title="Sin responder"></span><small>Sin responder</small>':'')+'</div></div></button>';
+  }).join('');
+  el.scrollTop=top;
+}
+function openThread(id){
+  var l=lead(id);if(!l)return;
+  ibId=id;
+  var th=$('#ibThread');delete th.dataset.vacio;
+  $('#inbox').classList.add('abierto');
+  th.innerHTML='<div class="ib-head"><button class="btn sm ib-back" data-action="ib-back" aria-label="Volver a la lista de conversaciones">‹ Chats</button><span class="av">'+esc(ini(l.nombre))+'</span><div class="id"><b>'+esc(l.nombre||'Sin nombre')+'</b><small>'+esc((l.tel?l.tel+' · ':'')+canalLabel(l.canal))+'</small></div><button class="btn sm" data-open="'+l.id+'">Ver ficha</button></div>'+
+    '<div class="chat" id="ibBox"><p class="muted" style="margin:0">Cargando mensajes…</p></div>'+
+    '<form class="reply" data-form="reply" data-target="ib"><textarea class="in" id="ibText" name="texto" rows="2" placeholder="Escribe tu respuesta" aria-label="Respuesta" required></textarea><button class="btn primary" type="submit" id="ibBtn">Enviar</button></form><small class="ib-hint" id="ibHint"></small>';
+  renderInboxList();
+  loadChat('ib');
+}
+function renderInbox(){
+  if(ibId&&!lead(ibId))ibId=null;
+  renderInboxList();
+  var th=$('#ibThread');
+  if(ibId)return;
+  var c=convs();
+  if(window.innerWidth>860&&c.length){openThread((c.filter(function(l){return l.esperando})[0]||c[0]).id);return}
+  $('#inbox').classList.remove('abierto');
+  if(!th.dataset.vacio){th.dataset.vacio='1';th.innerHTML='<div class="ib-empty"><b>Elige una conversación</b>Aquí verás los mensajes del cliente y podrás responderle sin salir de Pulso CRM.</div>'}
 }
 function refresh(){
   renderAll();
@@ -288,7 +330,7 @@ function refresh(){
 function optHtml(arr,v){return arr.map(function(x){return '<option value="'+x[0]+'"'+(x[0]===v?' selected':'')+'>'+esc(x[1])+'</option>'}).join('')}
 function openLead(id){
   var l=lead(id);if(!l)return;
-  openId=id;chatSig='';
+  openId=id;
   var chat=l.tieneChat?
     '<section><h3>Conversación</h3><div class="chat" id="chatBox"><p class="muted" style="margin:0">Cargando mensajes…</p></div>'+
       '<form class="reply" data-form="reply"><textarea class="in" id="replyText" name="texto" rows="2" placeholder="Escribe tu respuesta" aria-label="Respuesta" required></textarea><button class="btn primary" type="submit" id="replyBtn">Enviar</button></form>'+
@@ -318,7 +360,7 @@ function openLead(id){
   showOv('drawerOv');
   $('#drBody').scrollTop=0;
   var cb=$('#drHead .btn');if(cb)cb.focus();
-  if(l.tieneChat)loadChat(true);
+  if(l.tieneChat)loadChat('dr');
 }
 function renderDrHead(){
   var l=lead(openId);if(!l)return;
@@ -379,35 +421,50 @@ function renderDrFiles(){
   }).join('')+'</div>':'<p class="muted" style="margin:12px 0 0">Aún no hay archivos adjuntos.</p>';
 }
 
-/* ---------- Conversación (Chatwoot) ---------- */
-function renderChat(msgs,conf){
-  var box=$('#chatBox');if(!box)return;
-  var s=JSON.stringify(msgs.map(function(m){return m.id}))+conf;
-  if(s===chatSig)return;
-  chatSig=s;
+/* ---------- Conversación (mensajes de WhatsApp u otros canales) ---------- */
+var urlOk=function(u){return /^https?:\/\//.test(u)||/^\/api\/medios\/[a-f0-9]+$/.test(u)};
+function adjHtml(a){
+  if(!a||!urlOk(a.url))return '';
+  var u=esc(a.url),n=esc(a.name||'');
+  if(a.type==='image')return '<a href="'+u+'" target="_blank" rel="noopener"><img src="'+u+'" alt="'+(n||'Imagen')+'" loading="lazy"></a>';
+  if(a.type==='audio')return '<audio controls preload="none" src="'+u+'"></audio>';
+  if(a.type==='video')return '<video controls preload="none" src="'+u+'"></video>';
+  return '<a class="fl-adj" href="'+u+'" target="_blank" rel="noopener">'+(n||'Abrir archivo adjunto')+'</a>';
+}
+function estadoHtml(m){
+  if(m.direccion!=='out'||!m.estado)return '';
+  if(/^fallo/.test(m.estado))return '<span class="est mal">No se entregó: '+esc(m.estado.replace(/^fallo:\s*/,''))+'</span>';
+  var t={enviado:'Enviado',entregado:'Entregado',leido:'Leído'}[m.estado];
+  return t?'<span class="est">'+t+'</span>':'';
+}
+function renderChat(t,r){
+  var ids=CH[t],box=$('#'+ids.box);if(!box)return;
+  var msgs=r.mensajes||[],v=r.ventana,cerrada=!!(v&&!v.abierta);
+  var s=JSON.stringify([msgs.map(function(m){return m.id+(m.estado||'')}),r.configurado,cerrada]);
+  if(s===box.dataset.sig)return;
+  box.dataset.sig=s;
   var atBottom=box.scrollHeight-box.scrollTop-box.clientHeight<60||!box.dataset.init;
   box.innerHTML=msgs.length?msgs.map(function(m){
-    var adj=(m.adjuntos||[]).map(function(a){
-      if(!/^https?:\/\//.test(a.url))return '';
-      return a.type==='image'?'<a href="'+esc(a.url)+'" target="_blank" rel="noopener"><img src="'+esc(a.url)+'" alt="'+esc(a.name||'Imagen')+'" loading="lazy"></a>':'<a href="'+esc(a.url)+'" target="_blank" rel="noopener">'+esc(a.name||'Abrir archivo adjunto')+'</a>';
-    }).join('');
-    return '<div class="msg '+(m.direccion==='in'?'in':'out')+'">'+(m.texto?esc(m.texto):'')+adj+'<small>'+(m.direccion==='out'&&m.autor?esc(m.autor)+' · ':'')+hora(m.creado)+'</small></div>';
+    return '<div class="msg '+(m.direccion==='in'?'in':'out')+'">'+(m.texto?esc(m.texto):'')+(m.adjuntos||[]).map(adjHtml).join('')+'<small>'+(m.direccion==='out'&&m.autor?esc(m.autor)+' · ':'')+hora(m.creado)+'</small>'+estadoHtml(m)+'</div>';
   }).join(''):'<p class="muted" style="margin:0">Todavía no hay mensajes guardados de esta conversación.</p>';
   box.dataset.init='1';
   if(atBottom)box.scrollTop=box.scrollHeight;
-  var hint=$('#replyHint'),btn=$('#replyBtn'),ta=$('#replyText');
-  if(!conf){
-    if(hint)hint.textContent='Para responder desde aquí, conecta Chatwoot en Ajustes. Mientras tanto puedes responder desde Chatwoot.';
-    if(btn)btn.disabled=true;if(ta)ta.disabled=true;
-  }else if(hint){
-    hint.textContent='La respuesta sale por el mismo canal del cliente. En WhatsApp, solo se puede responder dentro de las 24 horas siguientes a su último mensaje.';
-    if(btn)btn.disabled=false;if(ta)ta.disabled=false;
-  }
+  var hint=$('#'+ids.hint),btn=$('#'+ids.btn),ta=$('#'+ids.ta);
+  var dis=false,txt;
+  if(!r.configurado){dis=true;txt=r.canal==='whatsapp'?'WhatsApp no está conectado del todo. Un administrador debe terminar la conexión en Ajustes.':'Para responder desde aquí, conecta Chatwoot en Ajustes.'}
+  else if(cerrada){dis=true;txt='Pasaron más de 24 horas desde el último mensaje del cliente. WhatsApp solo permite responder libremente dentro de ese tiempo; podrás responder cuando el cliente escriba de nuevo.'}
+  else if(r.canal==='whatsapp'&&v&&v.hasta)txt='Puedes responder hasta '+hora(v.hasta)+' (WhatsApp da 24 horas desde el último mensaje del cliente). Ctrl+Enter envía.';
+  else txt='La respuesta sale por el mismo canal del cliente.';
+  if(hint)hint.textContent=txt;
+  if(btn)btn.disabled=dis;
+  if(ta)ta.disabled=dis;
 }
-function loadChat(){
-  var id=openId;if(!id)return Promise.resolve();
-  return api('GET','/leads/'+id+'/mensajes').then(function(r){if(openId===id)renderChat(r.mensajes,r.configurado)}).catch(function(){
-    var box=$('#chatBox');if(box&&!box.dataset.init)box.innerHTML='<p class="muted" style="margin:0">No se pudieron cargar los mensajes.</p>';
+var chatLead=function(t){return t==='ib'?ibId:openId};
+function loadChat(t){
+  t=t||'dr';
+  var id=chatLead(t);if(!id)return Promise.resolve();
+  return api('GET','/leads/'+id+'/mensajes').then(function(r){if(chatLead(t)===id)renderChat(t,r)}).catch(function(){
+    var box=$('#'+CH[t].box);if(box&&!box.dataset.init)box.innerHTML='<p class="muted" style="margin:0">No se pudieron cargar los mensajes.</p>';
   });
 }
 
@@ -471,18 +528,32 @@ function openSettings(){
   var admin=S.me.rol==='admin';
   var h='<div class="mh"><h2>Ajustes</h2><button class="btn sm" type="button" data-action="close-modal">Cerrar</button></div>';
   if(!admin){
-    h+='<p class="hint">Tu usuario es <b>'+esc(S.me.nombre)+'</b>. Solo el administrador puede cambiar los ajustes y conectar Chatwoot.</p>';
+    h+='<p class="hint">Tu usuario es <b>'+esc(S.me.nombre)+'</b>. Solo el administrador puede cambiar los ajustes y conectar WhatsApp.</p>';
     $('#modal').innerHTML=h;showOv('modalOv');return;
   }
   h+='<div class="fg"><label class="fl full">Nombre del negocio<input class="in" id="sNombre" data-s="negocio" value="'+esc(S.settings.negocio)+'"></label>'+
   '<label class="fl full">Días de aviso por defecto para leads nuevos<input class="in" id="sAviso" data-s="avisoDias" type="number" min="0" max="90" value="'+esc(S.settings.avisoDias)+'"></label></div>'+
-  '<div class="sec"><h3>Conexión con Chatwoot</h3><div id="cwBox"><p class="muted" style="margin:0">Revisando…</p></div></div>'+
+  '<div class="sec"><h3>WhatsApp (conexión directa con Meta)</h3><div id="waBox"><p class="muted" style="margin:0">Revisando…</p></div></div>'+
+  '<div class="sec"><details><summary style="cursor:pointer;font-family:var(--font-display);font-weight:600">Chatwoot (opcional)</summary><div id="cwBox" style="margin-top:10px"><p class="muted" style="margin:0">Revisando…</p></div></details></div>'+
   '<div class="sec"><h3>Usuarios</h3><div id="usrBox"><p class="muted" style="margin:0">Cargando…</p></div>'+
   '<form class="fg" data-form="user"><label class="fl">Nombre<input class="in" id="uNombre" name="nombre" required></label><label class="fl">Correo<input class="in" id="uEmail" name="email" type="email" required></label>'+
   '<label class="fl">Contraseña (mínimo 8)<input class="in" id="uPass" name="password" type="password" minlength="8" required autocomplete="new-password"></label>'+
   '<label class="fl">Rol<select class="in" id="uRol" name="rol"><option value="vendedor">Vendedor</option><option value="admin">Administrador</option></select></label>'+
   '<button class="btn full" type="submit">Agregar usuario</button></form></div>';
   $('#modal').innerHTML=h;showOv('modalOv');
+  api('GET','/whatsapp/estado').then(function(r){
+    var c=r.configurado,li=function(ok,t){return '<li><span class="'+(ok?'ok':'no')+'">'+(ok?'✓':'✗')+'</span> '+t+'</li>'};
+    var box=$('#waBox');if(!box)return;
+    var listo=c.token&&c.phoneId&&c.secreto&&c.verifyToken;
+    box.innerHTML='<ul class="chk">'+li(c.token,'Token de acceso (WHATSAPP_TOKEN)')+li(c.phoneId,'Id del número de teléfono (WHATSAPP_PHONE_ID)')+li(c.secreto,'Clave secreta de la app de Meta (META_APP_SECRET)')+li(c.verifyToken,'Clave de verificación que tú inventas (META_VERIFY_TOKEN)')+'</ul>'+
+      '<div style="margin:12px 0 0"><button class="btn" type="button" data-action="wa-probar"'+(c.token&&c.phoneId?'':' disabled')+'>Probar la conexión</button> <span id="waProbe" class="muted"></span></div>'+
+      '<p class="sub" style="margin:12px 0 6px">En Meta (tu app, WhatsApp, Configuración, Webhook) pega esta dirección en “URL de devolución de llamada”'+(r.verifyToken?' y esta clave en “Token de verificación”':'')+'. Luego suscribe el campo <b>messages</b>.</p>'+
+      '<div class="copyrow"><input class="in" id="waUrl" readonly value="'+esc(r.webhookUrl)+'"><button class="btn" type="button" data-copy="waUrl">Copiar</button></div>'+
+      (r.verifyToken?'<div class="copyrow" style="margin-top:8px"><input class="in" id="waVer" readonly value="'+esc(r.verifyToken)+'"><button class="btn" type="button" data-copy="waVer">Copiar</button></div>':'')+
+      (listo?'':'<p class="hint">Faltan variables. Se definen donde está instalado Pulso CRM (Vercel o el archivo .env del servidor); mira la guía WHATSAPP.md.</p>')+
+      '<p class="sub" style="margin:14px 0 6px">Últimos avisos de WhatsApp</p>'+
+      (r.recientes.length?'<div class="evl">'+r.recientes.map(function(e){return '<div><span>'+esc(e.resultado||'')+'</span><small>'+esc(hora(e.creado))+'</small></div>'}).join('')+'</div>':'<p class="muted" style="margin:0">Todavía no ha llegado ningún aviso.</p>');
+  }).catch(function(e){var b=$('#waBox');if(b)b.innerHTML='<p class="hint">'+esc(e.message)+'</p>'});
   api('GET','/chatwoot/estado').then(function(r){
     var c=r.configurado,li=function(ok,t){return '<li><span class="'+(ok?'ok':'no')+'">'+(ok?'✓':'✗')+'</span> '+t+'</li>'};
     var box=$('#cwBox');if(!box)return;
@@ -509,6 +580,10 @@ function act(a,el){
     case 'new-lead':openNew();break;
     case 'settings':openSettings();break;
     case 'logout':api('POST','/auth/logout').then(function(){location.href='/login'}).catch(function(){location.href='/login'});break;
+    case 'ib-open':openThread(id);break;
+    case 'ib-back':$('#inbox').classList.remove('abierto');ibId=null;$('#ibThread').dataset.vacio='';renderInboxList();break;
+    case 'ib-filtro':IB.f=el.dataset.f;renderInboxList();break;
+    case 'wa-probar':{var pr=$('#waProbe');pr.textContent='Probando…';api('POST','/whatsapp/probar').then(function(r){pr.textContent='Conectado: '+(r.numero||'número sin nombre')+(r.nombre?' ('+r.nombre+')':'')}).catch(function(e){pr.textContent=e.message});break}
     case 'close-drawer':closeOv('drawerOv');break;
     case 'close-modal':closeOv('modalOv');break;
     case 'close-lb':closeOv('lbOv');break;
@@ -550,12 +625,13 @@ document.addEventListener('keydown',function(e){
     for(var i=0;i<ids.length;i++){if(!$('#'+ids[i]).hidden){closeOv(ids[i]);break}}
     return;
   }
-  if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)&&e.target.id==='replyText'){e.preventDefault();$('#replyBtn').click();return}
+  if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)&&(e.target.id==='replyText'||e.target.id==='ibText')){e.preventDefault();$(e.target.id==='ibText'?'#ibBtn':'#replyBtn').click();return}
   if((e.key==='Enter'||e.key===' ')&&e.target.matches&&e.target.matches('[data-open][role="button"]')){e.preventDefault();openLead(e.target.dataset.open)}
 });
 document.addEventListener('input',function(e){
   var el=e.target;
   if(el.id==='fq'){F.q=el.value;renderLeads();return}
+  if(el.id==='ibq'){IB.q=el.value;renderInboxList();return}
   if(el.hasAttribute&&el.hasAttribute('data-dias')){
     var sc=el.closest('[data-dias-scope]'),inp=sc&&sc.querySelector('[data-llegada]');
     if(inp){
@@ -627,10 +703,10 @@ document.addEventListener('submit',function(e){
     }).catch(fail).then(done);
   }
   if(kind==='reply'){
-    var lid=openId,texto=g('texto');
+    var tg=f.dataset.target==='ib'?'ib':'dr',lid=chatLead(tg),texto=g('texto');
     api('POST','/leads/'+lid+'/mensajes',{texto:texto}).then(function(){
-      f.reset();chatSig='';
-      return Promise.all([loadChat(),api('GET','/state').then(applyState)]);
+      f.reset();var bx=$('#'+CH[tg].box);if(bx)bx.dataset.sig='';
+      return Promise.all([loadChat(tg),api('GET','/state').then(function(st){applyState(st);if(view==='conversaciones')renderInboxList()})]);
     }).then(function(){toast('Mensaje enviado')}).catch(fail).then(done);
   }
   if(kind==='user'){
@@ -670,7 +746,7 @@ window.addEventListener('hashchange',function(){setView(location.hash.slice(1))}
 function applyState(st,quiet){
   var known={};S.leads.forEach(function(l){known[l.id]=1});
   var nuevos=loaded&&quiet?st.leads.filter(function(l){return !known[l.id]&&l.auto}):[];
-  var s=JSON.stringify([st.leads,st.tasks,st.settings,st.chatwoot]);
+  var s=JSON.stringify([st.leads,st.tasks,st.settings,st.chatwoot,st.whatsapp]);
   var changed=s!==sig;
   sig=s;
   S=st;
@@ -678,7 +754,7 @@ function applyState(st,quiet){
   ajustarPestanaChat();
   var first=!loaded;loaded=true;
   if(nuevos.length){
-    toast(nuevos.length===1?'Lead nuevo desde '+canalLabel(nuevos[0].canal)+': '+nuevos[0].nombre:pl(nuevos.length,'lead nuevo','leads nuevos')+' desde Chatwoot');
+    toast(nuevos.length===1?'Lead nuevo desde '+canalLabel(nuevos[0].canal)+': '+nuevos[0].nombre:pl(nuevos.length,'lead nuevo','leads nuevos')+' desde tus canales');
   }
   if(first||changed){
     var typing=view==='calendario'&&document.activeElement&&document.activeElement.closest&&document.activeElement.closest('#calDay');
@@ -694,8 +770,9 @@ function applyState(st,quiet){
 }
 function poll(){
   if(document.hidden||!loaded)return;
-  api('GET','/state').then(function(st){applyState(st,true)}).catch(function(){});
-  if(openId&&lead(openId)&&lead(openId).tieneChat)loadChat();
+  api('GET','/state').then(function(st){applyState(st,true);if(view==='conversaciones')renderInboxList()}).catch(function(){});
+  if(openId&&lead(openId)&&lead(openId).tieneChat)loadChat('dr');
+  if(view==='conversaciones'&&ibId)loadChat('ib');
 }
 function boot(){
   $('#fcanal').innerHTML='<option value="">Todos los canales</option>'+optHtml(CANALES,'');
