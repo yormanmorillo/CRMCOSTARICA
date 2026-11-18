@@ -81,6 +81,7 @@ function draw(){
   $('#pt').textContent=c.who;$('#ps').textContent=c.sub;$('#av').textContent=c.n[0];
   var v=val[cur]=val[cur]||{};
   $('#meta').innerHTML=c.f.map(function(f,i){return '<label class="'+(c.f.length%2&&i===c.f.length-1?'full':'')+'">'+f[1]+'<input data-f="'+f[0]+'" value="'+esc(v[f[0]]==null?f[2]:v[f[0]])+'"></label>'}).join('');
+  if(cur==='correo')$('#meta').insertAdjacentHTML('beforeend','<label class="full">Tipo de correo<select data-f="variante" style="border:1px solid var(--line);border-radius:8px;padding:7px 9px;font:inherit">'+[['normal','Correo de un cliente'],['pdf','Cliente con un PDF adjunto'],['boletin','Boletín de una tienda (se ignora)'],['auto','Respuesta automática (se ignora)'],['noreply','Aviso no-reply (se ignora)']].map(function(o){return '<option value="'+o[0]+'"'+((v.variante||'normal')===o[0]?' selected':'')+'>'+o[1]+'</option>'}).join('')+'</select></label>');
   $('#txt').placeholder=cur==='correo'?'Escribe el correo':'Escribe un mensaje';
   msgs();
 }
@@ -91,21 +92,32 @@ function msgs(){
 }
 var hh=function(d){return new Date(d||Date.now()).toLocaleTimeString('es-CR',{hour:'2-digit',minute:'2-digit'})};
 document.addEventListener('click',function(e){var t=e.target.closest('.tab');if(t){cur=t.dataset.k;tabs();draw()}});
+document.addEventListener('change',function(e){var f=e.target.dataset&&e.target.dataset.f;if(f==='variante')(val[cur]=val[cur]||{})[f]=e.target.value});
 document.addEventListener('input',function(e){var f=e.target.dataset&&e.target.dataset.f;if(f)(val[cur]=val[cur]||{})[f]=e.target.value});
 $('#form').addEventListener('submit',function(e){
   e.preventDefault();var t=$('#txt').value.trim();if(!t)return;
   var v=val[cur]||{},b={canal:cur,texto:t};CH[cur].f.forEach(function(f){b[f[0]]=v[f[0]]==null?f[2]:v[f[0]]});
   $('#aviso').innerHTML='';
-  api('POST','/api/demo/mensaje',b).then(function(r){
-    (chat[cur]=chat[cur]||[]).push({me:true,t:cur==='correo'&&b.asunto?b.asunto+'\n\n'+t:t,h:hh()});
-    $('#txt').value='';msgs();
+  var vr=(v.variante||'normal');
+  var envio=cur==='correo'&&vr!=='normal'?api('POST','/api/demo/eml',{raw:eml(b,t,vr)}).then(function(r){return {resultado:r.resultado,leadChat:vr==='pdf'?{canal:'correo',id:String(b.email).toLowerCase()}:null}}):api('POST','/api/demo/mensaje',b);
+  envio.then(function(r){
     var ign=/^ignorado/.test(r.resultado||'');
+    if(!ign)(chat[cur]=chat[cur]||[]).push({me:true,t:cur==='correo'&&b.asunto?b.asunto+'\n\n'+t:t,h:hh()});
+    $('#txt').value='';msgs();
     $('#aviso').innerHTML=ign?'<span class="bad">No entró: '+esc(r.resultado)+'</span>':'<span class="ok">Entró a Pulso: '+esc(r.resultado)+'</span>';
     if(r.leadChat)conv[cur]=r.leadChat;
     feed();
   }).catch(function(er){$('#aviso').innerHTML='<span class="bad">'+esc(er.message)+'</span>'});
 });
 $('#txt').addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('#form').requestSubmit()}});
+function eml(b,t,vr){
+  var from=vr==='boletin'?'Ofertas Tienda <ofertas@tienda-demo.com>':vr==='noreply'?'Banco <noreply@banco-demo.com>':(b.nombre+' <'+b.email+'>');
+  var h=['From: '+from,'To: info@tunegocio.com','Subject: '+(b.asunto||'Consulta'),'Message-ID: <demo'+Date.now()+'@demo.test>','Date: '+new Date().toUTCString(),'MIME-Version: 1.0'];
+  if(vr==='boletin')h.push('List-Unsubscribe: <mailto:baja@tienda-demo.com>','Precedence: bulk');
+  if(vr==='auto')h.push('Auto-Submitted: auto-replied');
+  if(vr==='pdf')return h.join('\r\n')+'\r\nContent-Type: multipart/mixed; boundary="b1"\r\n\r\n--b1\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n'+t+'\r\n--b1\r\nContent-Type: application/pdf; name="pasaporte.pdf"\r\nContent-Disposition: attachment; filename="pasaporte.pdf"\r\nContent-Transfer-Encoding: base64\r\n\r\nJVBERi0xLjQKJSBEZW1vIFBERgolJUVPRgo=\r\n--b1--\r\n';
+  return h.join('\r\n')+'\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n'+t+'\r\n';
+}
 var seen={};
 function feed(){
   api('GET','/api/state').then(function(s){
@@ -121,7 +133,7 @@ function poll(){
   var c=conv[cur];if(!c)return;
   api('GET','/api/demo/conversacion?canal='+c.canal+'&id='+encodeURIComponent(c.id)).then(function(r){
     var mine=(chat[cur]||[]).filter(function(m){return m.me}),out=(r.mensajes||[]).filter(function(m){return m.direccion==='out'}).map(function(m){return {me:false,t:m.texto,h:hh(m.creado),a:m.autor}});
-    var all=[];(r.mensajes||[]).forEach(function(m){all.push({me:m.direccion==='in',t:m.texto,h:hh(m.creado),a:m.direccion==='out'?m.autor:''})});
+    var all=[];(r.mensajes||[]).forEach(function(m){all.push({me:m.direccion==='in',t:(m.asunto&&cur==='correo'&&m.direccion==='in'?m.asunto+'\n\n':'')+m.texto,h:hh(m.creado),a:m.direccion==='out'?m.autor:''})});
     if(all.length&&JSON.stringify(all)!==JSON.stringify(chat[cur])){chat[cur]=all;msgs()}
   }).catch(function(){});
 }

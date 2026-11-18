@@ -520,7 +520,7 @@ const msg = (o) => ({
     ok(/lead creado/.test((await dm('instagram')).json.resultado) && /lead creado/.test((await dm('facebook')).json.resultado), 'demo Instagram y Facebook crean leads');
     const c1 = await dm('correo', { email: 'demo@ejemplo.com', asunto: 'Precios' });
     ok(/lead creado/.test(c1.json.resultado), 'demo correo crea lead');
-    ok(/agregado/.test((await dm('correo', { email: 'demo@ejemplo.com' })).json.resultado), 'segundo correo del mismo cliente no duplica');
+    ok(/mensaje guardado/.test((await dm('correo', { email: 'demo@ejemplo.com' })).json.resultado), 'segundo correo del mismo cliente no duplica');
     const stD = (await call('GET', '/api/state')).json;
     ok(['whatsapp', 'instagram', 'facebook', 'correo'].every((c) => stD.leads.some((l) => l.nombre === 'Demo ' + c && l.canal === c)), 'los 4 leads de demo aparecen con su canal y el nombre escrito');
     const lw = stD.leads.find((l) => l.nombre === 'Demo whatsapp');
@@ -528,6 +528,38 @@ const msg = (o) => ({
     ok(rr.status === 201, 'responder a un contacto de demo funciona sin enviar nada a Meta');
     const cv = (await call('GET', '/api/demo/conversacion?canal=whatsapp&id=50691112233')).json;
     ok(cv.mensajes.length === 2 && cv.mensajes[1].direccion === 'out', 'el simulador ve la respuesta del equipo');
+    const eml = (o = {}) => ['From: ' + (o.from || 'Ana Solís <ana.solis@cliente.cr>'), 'To: ventas@negocio.cr', 'Subject: ' + (o.subj || 'Cotización para 4 personas'), 'Message-ID: <' + (o.id || 'eml1@cliente.cr') + '>', 'Date: Wed, 18 Nov 2026 10:00:00 -0600', 'MIME-Version: 1.0', ...(o.h || []), 'Content-Type: text/plain; charset=utf-8', '', o.body || 'Hola, necesito precios.\n\nEl mié, 17 nov 2026 escribió Hotel:\n> texto viejo citado', ''].join('\r\n');
+    const e1 = await call('POST', '/api/demo/eml', { raw: eml() });
+    ok(/lead creado \(correo\)/.test(e1.json.resultado), 'un correo real (.eml) crea un lead: ' + e1.json.resultado);
+    const stE = (await call('GET', '/api/state')).json;
+    const le = stE.leads.find((l) => l.email === 'ana.solis@cliente.cr');
+    ok(le && le.nombre === 'Ana Solís' && le.canal === 'correo' && le.tieneChat, 'el lead toma nombre, correo y canal del mensaje');
+    const me = (await call('GET', `/api/leads/${le.id}/mensajes`)).json;
+    ok(me.mensajes.length === 1 && me.mensajes[0].asunto === 'Cotización para 4 personas' && me.mensajes[0].texto.includes('necesito precios') && !me.mensajes[0].texto.includes('texto viejo'), 'se guarda el asunto y se quita lo citado');
+    ok(/repetido/.test((await call('POST', '/api/demo/eml', { raw: eml() })).json.resultado), 'el mismo correo no se guarda dos veces');
+    ok(/mensaje guardado/.test((await call('POST', '/api/demo/eml', { raw: eml({ id: 'eml2@cliente.cr', subj: 'Re: Cotización', body: 'Gracias, ¿hay descuento?' }) })).json.resultado), 'un segundo correo del mismo cliente se suma al mismo lead');
+    for (const [nom, raw] of [
+      ['respuesta automática', eml({ id: 'a1', from: 'Bot <bot@cliente.cr>', h: ['Auto-Submitted: auto-replied'] })],
+      ['boletín', eml({ id: 'a2', from: 'Ofertas <ofertas@tienda.com>', h: ['List-Unsubscribe: <mailto:x@y.com>'] })],
+      ['no-reply', eml({ id: 'a3', from: 'noreply@banco.com' })],
+    ]) ok(/^ignorado/.test((await call('POST', '/api/demo/eml', { raw })).json.resultado), 'se ignora: ' + nom);
+    ok(stE.leads.filter((l) => /tienda\.com|banco\.com|bot@/.test(l.email || '')).length === 0, 'los correos automáticos no crean leads');
+    const adj = eml({ id: 'adj1', from: 'Luis <luis@cliente.cr>' }).replace(/Content-Type: text\/plain[\s\S]*$/, '') + ['Content-Type: multipart/mixed; boundary="b1"', '', '--b1', 'Content-Type: text/plain; charset=utf-8', '', 'Adjunto el pasaporte', '--b1', 'Content-Type: application/pdf; name="pasaporte.pdf"', 'Content-Disposition: attachment; filename="pasaporte.pdf"', 'Content-Transfer-Encoding: base64', '', Buffer.from('%PDF-1.4 prueba').toString('base64'), '--b1--', ''].join('\r\n');
+    ok(/lead creado/.test((await call('POST', '/api/demo/eml', { raw: adj })).json.resultado), 'correo con PDF adjunto entra');
+    const ll = (await call('GET', '/api/state')).json.leads.find((l) => l.email === 'luis@cliente.cr');
+    const ml = (await call('GET', `/api/leads/${ll.id}/mensajes`)).json.mensajes[0];
+    ok(ml.adjuntos.length === 1 && ml.adjuntos[0].type === 'document' && ml.adjuntos[0].name === 'pasaporte.pdf', 'el adjunto se guarda como documento');
+    const cfgG = await call('PATCH', '/api/admin/correo', { imapHost: 'localhost', imapPort: 1, usuario: 'ventas@negocio.cr', pass: 'clave-secreta-xyz', ignorar: '@spam.com\nmalo@x.com' });
+    ok(cfgG.status === 200 && cfgG.json.cfg.tienePass === true && !JSON.stringify(cfgG.json).includes('clave-secreta-xyz'), 'la contraseña del buzón se guarda y nunca se devuelve');
+    const cg = await call('GET', '/api/admin/correo');
+    ok(cg.json.configurado && cg.json.cfg.ignorar.length === 2 && !JSON.stringify(cg.json).includes('clave-secreta-xyz') && /correo\/revisar\?token=/.test(cg.json.cronUrl), 'el panel del correo muestra la configuración sin la contraseña');
+    ok(/^ignorado/.test((await call('POST', '/api/demo/eml', { raw: eml({ id: 'ig1', from: 'x@spam.com' }) })).json.resultado), 'la lista de remitentes ignorados funciona');
+    const pb = await call('POST', '/api/admin/correo/probar', {});
+    ok(pb.status === 400 && /Recibir correos/.test(pb.json.error), 'probar con un servidor que no responde da un error claro: ' + pb.json.error);
+    ok((await call('POST', '/api/admin/correo/revisar')).status === 502, 'revisar con el buzón caído avisa del error');
+    ok((await call('GET', '/api/admin/correo')).json.estado?.ok === false, 'el estado del buzón queda registrado');
+    ok((await call('GET', '/api/correo/revisar?token=mal', undefined, { nocookie: true })).status === 401, 'la visita de la tarea programada exige su clave');
+    ok((await call('GET', '/api/admin/correo', undefined, { nocookie: true, headers: { cookie: vend } })).status === 403, 'el vendedor no ve la configuración del correo');
     const pg = await fetch(BASE + '/demo', { headers: { cookie } });
     ok(pg.status === 200 && /Simulador de canales/.test(await pg.text()), 'la página /demo se sirve a quien inició sesión');
     ok((await fetch(BASE + '/demo', { redirect: 'manual' })).status === 302, '/demo sin iniciar sesión redirige al login');

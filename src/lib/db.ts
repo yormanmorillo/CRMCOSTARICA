@@ -88,6 +88,8 @@ alter table leads add column if not exists chat_id text;
 create unique index if not exists leads_chat_uidx on leads (chat_canal, chat_id) where chat_id is not null;
 alter table mensajes add column if not exists meta_id text;
 alter table mensajes add column if not exists estado text not null default '';
+alter table mensajes add column if not exists asunto text not null default '';
+alter table mensajes add column if not exists canal text not null default '';
 create unique index if not exists mensajes_meta_uidx on mensajes (meta_id) where meta_id is not null;
 create table if not exists medios (
   id text primary key,

@@ -38,9 +38,9 @@ SEC.negocio=function(out){
 };
 
 SEC.canales=function(out,ok){
-  return Promise.all([api('GET','/whatsapp/estado'),api('GET','/meta/estado'),api('GET','/canales/web'),api('GET','/chatwoot/estado')]).then(function(R){
+  return Promise.all([api('GET','/whatsapp/estado'),api('GET','/meta/estado'),api('GET','/canales/web'),api('GET','/chatwoot/estado'),api('GET','/admin/correo')]).then(function(R){
     if(!ok())return;
-    var wa=R[0],mt=R[1],web=R[2],cw=R[3],c=wa.configurado,m=mt.configurado,k=cw.configurado;
+    var wa=R[0],mt=R[1],web=R[2],cw=R[3],co=R[4],c=wa.configurado,m=mt.configurado,k=cw.configurado;
     var snip='<form id="contacto">\n  <input name="nombre" placeholder="Nombre" required>\n  <input name="tel" placeholder="Teléfono">\n  <input name="email" type="email" placeholder="Correo">\n  <textarea name="mensaje" placeholder="¿En qué te ayudamos?"></textarea>\n  <button>Enviar</button>\n</form>\n<scr'+'ipt>\ndocument.getElementById("contacto").addEventListener("submit",function(e){\n  e.preventDefault();\n  var d=Object.fromEntries(new FormData(e.target));\n  d.token="'+web.token+'";\n  fetch("'+web.url+'",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(d)})\n    .then(function(){e.target.reset();alert("¡Gracias! Te contactaremos pronto.")});\n});\n<\/scr'+'ipt>';
     out(
     '<div class="card"><h2>Canales de entrada</h2><p class="sub">Enciende solo los que usas. Para mostrar cómo entran los mensajes a un cliente, abre el <a href="/demo" target="_blank" rel="noopener">simulador de demostración</a>. Las llamadas no tienen conexión: se agregan a mano con “Nuevo lead” y el canal “Llamada”.</p></div>'+
@@ -57,6 +57,21 @@ SEC.canales=function(out,ok){
       '<p class="sub" style="margin:0">Cada vez que alguien llene el formulario de tu sitio, se crea un lead con el canal “Página web”. Pega este código en tu página (cambia los campos a tu gusto).</p>'+
       '<label class="fl">Dirección de recepción'+copyRow('webUrl',web.url)+'</label><label class="fl">Clave del formulario'+copyRow('webTok',web.token)+'</label>'+
       '<pre class="code" id="webSnip">'+esc(snip)+'</pre><div class="btns"><button class="btn" type="button" data-action="copy-snip">Copiar código</button><button class="btn" type="button" data-action="web-regen">Generar clave nueva</button></div></div>'+
+    '<div class="chan"><header><h3>Correo electrónico (cualquier proveedor)</h3>'+sw('correoActivo',co.activo,'Activo')+'</header>'+
+      '<p class="sub" style="margin:0">Pulso revisa tu buzón por IMAP: cada correo nuevo crea un lead (o se suma al que ya existe) y respondes desde Conversaciones. Solo entran los correos recibidos desde que lo conectas. Funciona con Gmail, Outlook, Zoho, cPanel o cualquier hosting. En Gmail y Microsoft 365 usa una <b>contraseña de aplicación</b>.</p>'+
+      '<form class="fg" data-form="correo-cfg" autocomplete="off">'+
+        '<label class="fl">Servidor IMAP<input class="in" name="imapHost" placeholder="imap.gmail.com" value="'+esc(co.cfg.imapHost)+'"></label>'+
+        '<label class="fl">Puerto IMAP<input class="in" name="imapPort" type="number" value="'+co.cfg.imapPort+'"></label>'+
+        '<label class="fl">Usuario (correo)<input class="in" name="usuario" type="email" placeholder="ventas@tunegocio.com" value="'+esc(co.cfg.usuario)+'"></label>'+
+        '<label class="fl">Contraseña<input class="in" name="pass" type="password" autocomplete="new-password" placeholder="'+(co.cfg.tienePass?'•••••••• (guardada; déjalo vacío para no cambiarla)':'Contraseña de aplicación')+'"></label>'+
+        '<label class="fl">Servidor SMTP (para responder)<input class="in" name="smtpHost" placeholder="smtp.gmail.com" value="'+esc(co.cfg.smtpHost)+'"></label>'+
+        '<label class="fl">Puerto SMTP<input class="in" name="smtpPort" type="number" value="'+co.cfg.smtpPort+'"></label>'+
+        '<label class="fl full">Nombre al responder<input class="in" name="nombre" placeholder="Hotel Pulso" value="'+esc(co.cfg.nombre)+'"></label>'+
+        '<label class="fl full">Remitentes a ignorar (uno por línea: correo o @dominio)<textarea class="in" name="ignorar" rows="3" placeholder="@boletines.com&#10;proveedor@ejemplo.com">'+esc((co.cfg.ignorar||[]).join('\n'))+'</textarea></label>'+
+        '<div class="btns full"><button class="btn primary" type="submit">Guardar</button><button class="btn" type="button" data-action="co-probar"'+(co.configurado?'':' disabled')+'>Probar la conexión</button><button class="btn" type="button" data-action="co-revisar"'+(co.configurado?'':' disabled')+'>Revisar ahora</button></div>'+
+      '</form><span id="coProbe" class="muted">'+(co.estado?(co.estado.ok?'✓ ':'✗ ')+esc(co.estado.msg)+' · '+esc(hora(co.estado.cuando)):'')+'</span>'+
+      '<p class="sub" style="margin:4px 0 0">Se filtran solos las respuestas automáticas, boletines y remitentes “no-reply”. Si tu servidor no tiene proceso permanente (p. ej. Vercel), programa una visita cada 2 minutos a esta dirección:</p>'+copyRow('coCron',co.cronUrl)+
+      '<p class="sub" style="margin:4px 0 0">Últimos correos revisados</p>'+recientes(co.recientes,'Todavía no se ha revisado ningún correo.')+'</div>'+
     '<div class="chan"><header><h3>Chatwoot (opcional)</h3>'+sw('chatwootActivo',S.chatwoot.activo,'Activo')+'</header>'+
       '<p class="sub" style="margin:0">Si prefieres atender con Chatwoot, enciende este interruptor y Pulso volverá a recibir sus mensajes. Apagado, Chatwoot se ignora por completo.</p>'+
       (S.chatwoot.activo?'<ul class="chk">'+li(k.cuenta,'Número de cuenta (CHATWOOT_ACCOUNT_ID)')+li(k.token,'Token de acceso (CHATWOOT_API_TOKEN)')+li(k.webhookToken,'Clave del webhook (WEBHOOK_TOKEN)')+'</ul>'+(cw.webhookUrl?copyRow('whUrl',cw.webhookUrl):'<p class="hint">Falta definir WEBHOOK_TOKEN para generar la dirección.</p>')+'<p class="sub" style="margin:4px 0 0">Últimos avisos</p>'+recientes(cw.recientes,'Todavía no ha llegado ningún aviso.'):'')+'</div>');
@@ -160,6 +175,8 @@ window.adminAct=function(a,el,id){
   switch(a){
     case 'adm-go':AD.sec=el.dataset.sec||'negocio';if(view==='admin')renderAdmin();else location.hash='#admin';break;
     case 'adm-sec':AD.sec=el.dataset.sec;admRender();break;
+    case 'co-probar':{var pc=$('#coProbe');pc.textContent='Probando…';api('POST','/admin/correo/probar',{}).then(function(r){pc.textContent='✓ Recibir correos: conectado. Enviar: '+(r.smtp==='ok'?'conectado':'falló ('+r.smtp.replace(/^error: /,'')+')')}).catch(function(e){pc.textContent='✗ '+e.message});break}
+    case 'co-revisar':{var pr2=$('#coProbe');pr2.textContent='Revisando…';api('POST','/admin/correo/revisar').then(function(r){pr2.textContent='✓ '+r.msg+(r.ignorados?' · '+pl(r.ignorados,'ignorado','ignorados'):'');return admSync()}).catch(function(e){pr2.textContent='✗ '+e.message});break}
     case 'wa-probar':{var pr=$('#waProbe');pr.textContent='Probando…';api('POST','/whatsapp/probar').then(function(r){pr.textContent='Conectado: '+(r.numero||'número sin nombre')+(r.nombre?' ('+r.nombre+')':'')}).catch(function(e){pr.textContent=e.message});break}
     case 'copy-snip':copyText(window.__snip||'',el);break;
     case 'web-regen':if(armed(el,'Toca otra vez: la clave anterior dejará de funcionar'))api('POST','/canales/web/token').then(function(){toast('Clave nueva generada');admRender()}).catch(fail);break;
@@ -198,6 +215,7 @@ window.adminChange=function(el){
 window.adminSubmit=function(f,kind,fd,g,done){
   var run=function(pr,msg){pr.then(admSync).then(function(){f.reset&&f.reset();toast(msg);admRender()}).catch(function(e){fail(e)}).then(done);return true};
   if(kind==='et-add')return run(api('POST','/etapas',{nombre:g('nombre'),color:g('color'),tipo:g('tipo')}),'Etapa agregada');
+  if(kind==='correo-cfg')return run(api('PATCH','/admin/correo',{imapHost:g('imapHost'),imapPort:g('imapPort'),usuario:g('usuario'),pass:g('pass'),smtpHost:g('smtpHost'),smtpPort:g('smtpPort'),nombre:g('nombre'),ignorar:g('ignorar')}),'Correo guardado');
   if(kind==='mo-add')return run(api('POST','/motivos',{nombre:g('nombre')}),'Motivo agregado');
   if(kind==='pr-add')return run(api('POST','/productos',{nombre:g('nombre'),descripcion:g('descripcion'),precio:g('precio'),moneda:g('moneda')}),'Producto agregado');
   if(kind==='user')return run(api('POST','/usuarios',{nombre:g('nombre'),email:g('email'),password:String(fd.get('password')||''),rol:g('rol')}),'Usuario agregado');

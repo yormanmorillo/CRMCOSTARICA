@@ -65,3 +65,17 @@ Con la sesión de administrador iniciada, abre `/demo` (también hay un enlace e
 - Los canales deben estar activados en Admin → Canales (el correo no necesita activación).
 - El canal **Correo** crea el lead con el asunto y el texto como nota; todavía no recibe correos reales automáticamente.
 - Los leads de demostración se borran como cualquier otro desde su ficha.
+
+
+## Correo electrónico como canal
+
+En **Admin → Canales → Correo** se conecta cualquier buzón por IMAP (recibir) y SMTP (responder): Gmail, Outlook/Microsoft 365, Zoho, cPanel o el de tu hosting.
+
+- Datos: servidor y puerto IMAP (993), usuario, contraseña, servidor y puerto SMTP (465 o 587). En Gmail y Microsoft 365 hay que crear una **contraseña de aplicación** (la cuenta debe tener verificación en dos pasos). La contraseña se guarda cifrada y nunca se vuelve a mostrar.
+- «Probar la conexión» revisa IMAP y SMTP; «Revisar ahora» fuerza una lectura.
+- Cada correo nuevo sin leer crea un lead (canal «Correo») o se suma al lead de ese remitente; se guarda el asunto, el texto sin lo citado y hasta 5 adjuntos (imágenes, PDF, Office) de máx. 4 MB. Los correos se marcan como leídos. Solo entran los recibidos **desde que conectas el buzón**; no se importa el historial.
+- Se ignoran solos: respuestas automáticas, boletines/listas, remitentes `no-reply`, `mailer-daemon` y el propio buzón. Además puedes escribir una lista de remitentes o dominios a ignorar.
+- Responder desde Conversaciones envía un correo «Re: asunto» dentro del mismo hilo.
+- **Revisión automática:** en un servidor propio, Pulso revisa cada ~90 segundos por sí solo. En Vercel (sin proceso permanente) programa una visita cada 2 minutos a la dirección que aparece en el panel (`/api/correo/revisar?token=…`).
+- Sin OAuth todavía: Google y Microsoft permiten contraseña de aplicación, pero algunas empresas con Microsoft 365 la tienen bloqueada; en ese caso hay que agregar «Conectar con Microsoft» (OAuth).
+- El simulador `/demo` tiene la pestaña **Correo**: manda un correo de cliente, uno con PDF, y ejemplos de boletín, respuesta automática y no-reply para mostrar que se filtran.

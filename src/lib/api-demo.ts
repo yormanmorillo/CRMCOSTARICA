@@ -1,8 +1,8 @@
 import { q } from './db';
 import { HttpError, json, uid, str, hoyCR, digits } from './util';
 import { route, body } from './router';
-import { ETAPA_INICIAL_SQL, logAct } from './leads';
 import { procesarMeta, waConfig } from './meta';
+import { recibirCorreo } from './correo';
 
 /** Simulador para demostraciones (página /demo): hace entrar mensajes como si los mandara un cliente.
  *  Usa exactamente el mismo camino que los avisos reales de Meta. Solo para administradores. */
@@ -45,23 +45,9 @@ route('POST', '/demo/mensaje', async ({ req }) => {
   if (canal === 'correo') {
     const email = str(b.email, 200).toLowerCase() || slug(nombre) + '@ejemplo.com';
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new HttpError(400, 'Correo no válido');
-    const asunto = str(b.asunto, 150);
-    const cuerpo = (asunto ? asunto + '\n\n' : '') + texto;
-    let lead: any = (await q('select * from leads where lower(email)=$1 limit 1', [email]))[0];
-    let creado = false;
-    if (!lead) {
-      const dias = parseInt((await q("select valor from ajustes where clave='avisoDias'"))[0]?.valor, 10);
-      lead = (await q(
-        `insert into leads(id, nombre, email, canal, interes, aviso_dias, creado, auto, etapa)
-         values($1,$2,$3,'correo',$4,$5,$6,true,${ETAPA_INICIAL_SQL}) returning *`,
-        [uid(), nombre, email, (asunto || texto).slice(0, 500), Number.isNaN(dias) ? 5 : dias, hoyCR()],
-      ))[0];
-      creado = true;
-      await logAct(lead.id, 'creado', 'Lead creado desde un correo (automático)');
-    } else await logAct(lead.id, 'mensaje', 'Volvió a escribir por correo');
-    await q('insert into notas(id, lead_id, usuario, texto) values($1,$2,$3,$4)', [uid(), lead.id, 'Correo', cuerpo]);
-    await q('insert into eventos_cw(evento, payload, resultado) values($1,$2::jsonb,$3)', ['correo', JSON.stringify({ nombre, email }), creado ? 'lead creado (correo)' : 'mensaje agregado (correo)']);
-    return json({ resultado: creado ? 'lead creado (correo)' : 'mensaje agregado (correo)', leadChat: null });
+    const r = await recibirCorreo({ de: email, nombre, asunto: str(b.asunto, 150), texto, messageId: '<demo-' + uid() + '@demo.test>' });
+    await q('insert into eventos_cw(evento, payload, resultado) values($1,$2::jsonb,$3)', ['correo', JSON.stringify({ nombre, email }), r]);
+    return json({ resultado: r, leadChat: { canal, id: email } });
   }
   throw new HttpError(400, 'Canal no válido');
 }, { admin: true });
@@ -72,6 +58,6 @@ route('GET', '/demo/conversacion', async ({ url }) => {
   const id = url.searchParams.get('id') || '';
   const l = (await q('select id, nombre from leads where chat_id=$1 and chat_canal=$2 limit 1', [id, canal]))[0];
   if (!l) return json({ lead: null, mensajes: [] });
-  const m = await q('select direccion, texto, autor, creado from mensajes where lead_id=$1 order by creado, n limit 100', [l.id]);
+  const m = await q('select direccion, texto, autor, asunto, creado from mensajes where lead_id=$1 order by creado, n limit 100', [l.id]);
   return json({ lead: l, mensajes: m });
 }, { admin: true });

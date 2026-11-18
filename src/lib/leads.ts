@@ -43,7 +43,7 @@ export async function getAjuste(clave: string): Promise<string | undefined> {
   return (await q('select valor from ajustes where clave=$1', [clave]))[0]?.valor;
 }
 
-export type CanalConexion = 'whatsapp' | 'meta' | 'chatwoot' | 'web';
+export type CanalConexion = 'whatsapp' | 'meta' | 'chatwoot' | 'web' | 'correo';
 
 /** Interruptor de cada conexión. Chatwoot nace apagado; las demás nacen encendidas (solo actúan si están configuradas). */
 export async function canalActivo(n: CanalConexion): Promise<boolean> {
@@ -118,7 +118,7 @@ function agruparValores(rows: any[]) {
 }
 
 export async function loadState(user: User) {
-  const [leads, aten, arch, tareas, ult, settings, etapas, motivos, productos, usuarios, valores, lic, wa, mt, cw, web] = await Promise.all([
+  const [leads, aten, arch, tareas, ult, settings, etapas, motivos, productos, usuarios, valores, lic, wa, mt, cw, web, co, ccfg] = await Promise.all([
     q('select * from leads order by creado desc, actualizado desc'),
     q('select id, lead_id, fecha, canal, nota, auto from atenciones order by fecha, creado'),
     q('select id, lead_id, nombre from archivos order by creado'),
@@ -135,7 +135,14 @@ export async function loadState(user: User) {
     canalActivo('meta'),
     canalActivo('chatwoot'),
     canalActivo('web'),
+    canalActivo('correo'),
+    getAjuste('correo_cfg'),
   ]);
+  let correoOk = false;
+  try {
+    const j = JSON.parse(ccfg || '{}');
+    correoOk = !!(j.imapHost && j.usuario && j.passEnc);
+  } catch {}
   const group = (rows: any[], f: (r: any) => any) => {
     const m = new Map<string, any[]>();
     rows.forEach((r) => {
@@ -163,6 +170,7 @@ export async function loadState(user: User) {
     whatsapp: { configurado: waConfig().ok && wa, activo: wa },
     meta: { configurado: fbConfig().ok && mt, activo: mt },
     web: { activo: web },
+    correo: { configurado: correoOk, activo: co },
     leads: leads.map((r) => mapLead(r, gA.get(r.id) || [], gF.get(r.id) || [], gU.get(r.id), gV.get(r.id), nombres, mots)),
     tasks: tareas.map(mapTarea),
   };

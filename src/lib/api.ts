@@ -8,9 +8,11 @@ import { esDemoId, enviarWhatsApp, enviarSocial, fbConfig, probarWhatsApp, proce
 import { route, body, oneOf, mustLead } from './router';
 import { estadoLicencia } from './licencia';
 import { limpiezaAutomatica } from './almacen';
+import { enviarCorreo, esDemoCorreo, leerCfg, listo, revisionAutomatica, iniciarRevision } from './correo';
 import './api-admin';
 import './api-canales';
 import './api-demo';
+import './api-correo';
 
 export { dispatch } from './router';
 
@@ -25,6 +27,8 @@ route('POST', '/auth/logout', async ({ req }) => json({ ok: true }, 200, { 'set-
 
 route('GET', '/state', async ({ user }) => {
   limpiezaAutomatica().catch(() => {});
+  revisionAutomatica().catch(() => {});
+  iniciarRevision();
   return json(await loadState(user!));
 });
 
@@ -223,12 +227,13 @@ route('DELETE', '/archivos/:id', async ({ params }) => {
 /* ---------- Conversaciones ---------- */
 const tieneChat = (l: any) => !!(l.chat_id || l.cw_conversation_id);
 const porWhatsApp = (l: any) => l.chat_canal === 'whatsapp' && !!l.chat_id;
+const porCorreo = (l: any) => l.chat_canal === 'correo' && !!l.chat_id;
 const porSocial = (l: any) => (l.chat_canal === 'instagram' || l.chat_canal === 'facebook') && !!l.chat_id;
 
 route('GET', '/leads/:id/mensajes', async ({ params }) => {
   const lead = await mustLead(params.id);
   const rows = await q(
-    'select id, direccion, texto, autor, adjuntos, estado, creado from mensajes where lead_id=$1 order by creado asc, n asc limit 300',
+    'select id, direccion, texto, autor, adjuntos, estado, asunto, creado from mensajes where lead_id=$1 order by creado asc, n asc limit 300',
     [params.id],
   );
   const wa = porWhatsApp(lead);
@@ -236,8 +241,8 @@ route('GET', '/leads/:id/mensajes', async ({ params }) => {
   return json({
     mensajes: rows,
     tieneChat: tieneChat(lead),
-    canal: wa ? 'whatsapp' : so ? lead.chat_canal : lead.cw_conversation_id ? 'chatwoot' : '',
-    configurado: esDemoId(lead.chat_id || '') ? true : wa ? waConfig().ok && (await canalActivo('whatsapp')) : so ? fbConfig().ok && (await canalActivo('meta')) : cwConfig().ok && (await canalActivo('chatwoot')),
+    canal: wa ? 'whatsapp' : so || porCorreo(lead) ? lead.chat_canal : lead.cw_conversation_id ? 'chatwoot' : '',
+    configurado: esDemoId(lead.chat_id || '') || (porCorreo(lead) && esDemoCorreo(lead.chat_id)) ? true : porCorreo(lead) ? listo(await leerCfg()) && (await canalActivo('correo')) : wa ? waConfig().ok && (await canalActivo('whatsapp')) : so ? fbConfig().ok && (await canalActivo('meta')) : cwConfig().ok && (await canalActivo('chatwoot')),
     ventana: wa || so ? await ventanaWhatsApp(lead.id) : null,
   });
 });
@@ -259,8 +264,24 @@ route('POST', '/leads/:id/mensajes', async ({ req, params, user }) => {
       `insert into mensajes(id, lead_id, meta_id, direccion, texto, autor, estado)
        values($1,$2,$3,'out',$4,$5,'enviado')
        on conflict do nothing
-       returning id, direccion, texto, autor, adjuntos, estado, creado`,
+       returning id, direccion, texto, autor, adjuntos, estado, asunto, creado`,
       [uid(), lead.id, wamid || null, texto, user!.nombre],
+    );
+    await registrarRespuesta(lead, user!.nombre);
+    return json({ mensaje: rows[0] || null }, 201);
+  }
+
+  if (porCorreo(lead)) {
+    if (!esDemoCorreo(lead.chat_id) && !(await canalActivo('correo'))) throw new HttpError(409, 'El correo está desactivado en Admin, Canales.');
+    const ult = (await q("select asunto, meta_id from mensajes where lead_id=$1 and direccion='in' and canal='correo' order by creado desc, n desc limit 1", [lead.id]))[0];
+    const asunto = ult?.asunto ? (/^re:/i.test(ult.asunto) ? ult.asunto : 'Re: ' + ult.asunto) : 'Respuesta a tu consulta';
+    const mid = await enviarCorreo(lead.chat_id, asunto, texto, { id: ult?.meta_id && !/^sin-id/.test(ult.meta_id) ? ult.meta_id : undefined });
+    const rows = await q(
+      `insert into mensajes(id, lead_id, meta_id, direccion, texto, autor, estado, asunto, canal)
+       values($1,$2,$3,'out',$4,$5,'enviado',$6,'correo')
+       on conflict do nothing
+       returning id, direccion, texto, autor, adjuntos, estado, asunto, creado`,
+      [uid(), lead.id, mid || null, texto, user!.nombre, asunto],
     );
     await registrarRespuesta(lead, user!.nombre);
     return json({ mensaje: rows[0] || null }, 201);
@@ -276,7 +297,7 @@ route('POST', '/leads/:id/mensajes', async ({ req, params, user }) => {
       `insert into mensajes(id, lead_id, meta_id, direccion, texto, autor, estado)
        values($1,$2,$3,'out',$4,$5,'enviado')
        on conflict do nothing
-       returning id, direccion, texto, autor, adjuntos, estado, creado`,
+       returning id, direccion, texto, autor, adjuntos, estado, asunto, creado`,
       [uid(), lead.id, mid || null, texto, user!.nombre],
     );
     await registrarRespuesta(lead, user!.nombre);
@@ -291,7 +312,7 @@ route('POST', '/leads/:id/mensajes', async ({ req, params, user }) => {
     `insert into mensajes(id, lead_id, cw_message_id, cw_conversation_id, direccion, texto, autor)
      values($1,$2,$3,$4,'out',$5,$6)
      on conflict (cw_message_id) do update set autor = excluded.autor
-     returning id, direccion, texto, autor, adjuntos, estado, creado`,
+     returning id, direccion, texto, autor, adjuntos, estado, asunto, creado`,
     [id, lead.id, cwId, lead.cw_conversation_id, texto, user!.nombre],
   );
   await registrarRespuesta(lead, user!.nombre);
@@ -318,7 +339,7 @@ route('GET', '/medios/:id', async ({ params }) => {
 });
 
 /* ---------- Ajustes y usuarios ---------- */
-const TOGGLES: Record<string, string> = { chatwootActivo: 'chatwoot', whatsappActivo: 'whatsapp', metaActivo: 'meta', webActivo: 'web' };
+const TOGGLES: Record<string, string> = { chatwootActivo: 'chatwoot', whatsappActivo: 'whatsapp', metaActivo: 'meta', webActivo: 'web', correoActivo: 'correo' };
 route('PATCH', '/ajustes', async ({ req }) => {
   const b = await body(req);
   if ('negocio' in b) await setSetting('negocio', str(b.negocio, 80) || 'Pulso CRM');
@@ -330,7 +351,7 @@ route('PATCH', '/ajustes', async ({ req }) => {
   }
   for (const [k, canal] of Object.entries(TOGGLES)) if (k in b) await setSetting('canal_' + canal, b[k] ? '1' : '0');
   const st = await getSettings();
-  return json({ settings: st, canales: { chatwoot: await canalActivo('chatwoot'), whatsapp: await canalActivo('whatsapp'), meta: await canalActivo('meta'), web: await canalActivo('web') } });
+  return json({ settings: st, canales: { chatwoot: await canalActivo('chatwoot'), whatsapp: await canalActivo('whatsapp'), meta: await canalActivo('meta'), web: await canalActivo('web'), correo: await canalActivo('correo') } });
 }, { admin: true });
 
 route('GET', '/usuarios', async () => {

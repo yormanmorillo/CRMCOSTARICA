@@ -59,7 +59,7 @@ function api(method,path,data){
 }
 function fail(e){toast(e&&e.message?e.message:'Algo salió mal')}
 
-var S={leads:[],tasks:[],etapas:[],motivos:[],productos:[],usuarios:[],settings:{negocio:'Pulso CRM',avisoDias:5},me:{nombre:'',rol:'vendedor'},licencia:{estado:'sin_sistema',puedeEscribir:true},chatwoot:{configurado:false,activo:false},whatsapp:{configurado:false,activo:true},meta:{configurado:false,activo:true},web:{activo:true}};
+var S={leads:[],tasks:[],etapas:[],motivos:[],productos:[],usuarios:[],settings:{negocio:'Pulso CRM',avisoDias:5},me:{nombre:'',rol:'vendedor'},licencia:{estado:'sin_sistema',puedeEscribir:true},chatwoot:{configurado:false,activo:false},whatsapp:{configurado:false,activo:true},meta:{configurado:false,activo:true},web:{activo:true},correo:{configurado:false,activo:true}};
 var lead=function(id){return S.leads.filter(function(l){return l.id===id})[0]};
 function put(l){var i=S.leads.findIndex(function(x){return x.id===l.id});if(i>-1)S.leads[i]=l;else S.leads.unshift(l)}
 var activo=function(l){var t=tipoE(l.etapa);return t!=='ganada'&&t!=='perdida'};
@@ -349,7 +349,7 @@ function convs(){
 function pintarFiltrosChat(){
   var cs=S.leads.filter(function(l){return l.tieneChat}),cnt={};
   cs.forEach(function(l){cnt[l.canal]=(cnt[l.canal]||0)+1});
-  var colorC={whatsapp:'wa',instagram:'ig',facebook:'fb',web:'web',llamada:'vio',otro:'web'};
+  var colorC={whatsapp:'wa',instagram:'ig',facebook:'fb',correo:'warn',web:'web',llamada:'vio',otro:'web'};
   var ks=Object.keys(cnt).sort(function(a,b){return cnt[b]-cnt[a]});
   var h='<button class="fchip" type="button" data-action="ib-canal" data-c="" aria-pressed="'+(!IB.c)+'">Todos <b>'+cs.length+'</b></button>'+ks.map(function(k){return '<button class="fchip" type="button" data-action="ib-canal" data-c="'+esc(k)+'" aria-pressed="'+(IB.c===k)+'" style="--c:var(--'+(colorC[k]||'web')+')"><i></i>'+esc(canalLabel(k))+' <b>'+cnt[k]+'</b></button>'}).join('');
   var box=$('#ibCanales');if(box&&box.dataset.sig!==h){box.dataset.sig=h;box.innerHTML=h}
@@ -633,14 +633,14 @@ function renderChat(t,r){
   box.dataset.sig=s;
   var atBottom=box.scrollHeight-box.scrollTop-box.clientHeight<60||!box.dataset.init;
   box.innerHTML=msgs.length?msgs.map(function(m){
-    return '<div class="msg '+(m.direccion==='in'?'in':'out')+'">'+(m.texto?esc(m.texto):'')+(m.adjuntos||[]).map(adjHtml).join('')+'<small>'+(m.direccion==='out'&&m.autor?esc(m.autor)+' · ':'')+hora(m.creado)+'</small>'+estadoHtml(m)+'</div>';
+    return '<div class="msg '+(m.direccion==='in'?'in':'out')+'">'+(m.asunto?'<b class="asu">✉ '+esc(m.asunto)+'</b>':'')+(m.texto?esc(m.texto):'')+(m.adjuntos||[]).map(adjHtml).join('')+'<small>'+(m.direccion==='out'&&m.autor?esc(m.autor)+' · ':'')+hora(m.creado)+'</small>'+estadoHtml(m)+'</div>';
   }).join(''):'<p class="muted" style="margin:0">Todavía no hay mensajes guardados de esta conversación.</p>';
   box.dataset.init='1';
   if(atBottom)box.scrollTop=box.scrollHeight;
   var hint=$('#'+ids.hint),btn=$('#'+ids.btn),ta=$('#'+ids.ta);
   var dis=false,txt;
   var social=r.canal==='whatsapp'||r.canal==='instagram'||r.canal==='facebook',nomC=canalLabel(r.canal);
-  if(!r.configurado){dis=true;txt=social?nomC+' no está conectado del todo. Un administrador debe terminar la conexión en Admin, Canales.':'Para responder desde aquí, enciende y conecta Chatwoot en Admin, Canales.'}
+  if(!r.configurado){dis=true;txt=social||r.canal==='correo'?nomC+' no está conectado del todo. Un administrador debe terminar la conexión en Admin, Canales.':'Para responder desde aquí, enciende y conecta Chatwoot en Admin, Canales.'}
   else if(cerrada){dis=true;txt='Pasaron más de 24 horas desde el último mensaje del cliente. '+nomC+' solo permite responder libremente dentro de ese tiempo; podrás responder cuando el cliente escriba de nuevo.'}
   else if(social&&v&&v.hasta)txt='Puedes responder hasta '+hora(v.hasta)+' ('+nomC+' da 24 horas desde el último mensaje del cliente). Ctrl+Enter envía.';
   else txt='La respuesta sale por el mismo canal del cliente.';
