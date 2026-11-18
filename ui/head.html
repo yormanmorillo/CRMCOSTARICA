@@ -35,7 +35,7 @@
 [hidden]{display:none!important}
 body{--sec:var(--s-panel);background:linear-gradient(180deg,color-mix(in srgb,var(--sec) 11%,var(--bg)) 0,var(--bg) 260px) no-repeat,var(--bg);background-color:var(--bg);color:var(--fg);font-family:var(--font-body);font-size:14px;line-height:1.45;
   padding-block:0 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
-.wrap{max-width:1200px;margin:0 auto}
+.wrap{max-width:none;margin:0 auto}
 h1,h2,h3{font-family:var(--font-display);margin:0;letter-spacing:-.01em}
 button{font:inherit;color:inherit}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -392,7 +392,7 @@ a{color:var(--accent)}
 
 /* Ficha del lead como ventana flotante grande */
 #drawerOv{justify-content:center;align-items:center;padding:clamp(8px,2.2vw,28px)}
-#drawerOv .drawer{width:min(1320px,100%);height:100%;max-height:100%;border-radius:18px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.45);padding-right:0;border:1px solid var(--line)}
+#drawerOv .drawer{width:min(1700px,100%);height:100%;max-height:100%;border-radius:18px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.45);padding-right:0;border:1px solid var(--line)}
 @media(prefers-reduced-motion:no-preference){#drawerOv:not([hidden]) .drawer{animation:ventana .18s ease-out}@keyframes ventana{from{opacity:0;transform:translateY(10px) scale(.985)}to{opacity:1;transform:none}}}
 @media(max-width:640px){#drawerOv{padding:0}#drawerOv .drawer{border-radius:0;border:0}}
 /* Filtros de Conversaciones */
