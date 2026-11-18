@@ -4,12 +4,13 @@ import { login, sessionCookie, clearCookie, hashPassword } from './auth';
 import { loadState, loadLead, getSettings, setSetting, mapTarea, getEtapas, logAct, canalActivo, siguienteEtapa, ETAPA_INICIAL_SQL, CANALES, TIPOS } from './leads';
 import { cwConfig, enviarMensaje, verifySignature } from './chatwoot';
 import { procesarEvento, registrarRespuesta } from './webhook';
-import { enviarWhatsApp, enviarSocial, fbConfig, probarWhatsApp, procesarMeta, verifyMetaSignature, ventanaWhatsApp, waConfig } from './meta';
+import { esDemoId, enviarWhatsApp, enviarSocial, fbConfig, probarWhatsApp, procesarMeta, verifyMetaSignature, ventanaWhatsApp, waConfig } from './meta';
 import { route, body, oneOf, mustLead } from './router';
 import { estadoLicencia } from './licencia';
 import { limpiezaAutomatica } from './almacen';
 import './api-admin';
 import './api-canales';
+import './api-demo';
 
 export { dispatch } from './router';
 
@@ -236,7 +237,7 @@ route('GET', '/leads/:id/mensajes', async ({ params }) => {
     mensajes: rows,
     tieneChat: tieneChat(lead),
     canal: wa ? 'whatsapp' : so ? lead.chat_canal : lead.cw_conversation_id ? 'chatwoot' : '',
-    configurado: wa ? waConfig().ok && (await canalActivo('whatsapp')) : so ? fbConfig().ok && (await canalActivo('meta')) : cwConfig().ok && (await canalActivo('chatwoot')),
+    configurado: esDemoId(lead.chat_id || '') ? true : wa ? waConfig().ok && (await canalActivo('whatsapp')) : so ? fbConfig().ok && (await canalActivo('meta')) : cwConfig().ok && (await canalActivo('chatwoot')),
     ventana: wa || so ? await ventanaWhatsApp(lead.id) : null,
   });
 });

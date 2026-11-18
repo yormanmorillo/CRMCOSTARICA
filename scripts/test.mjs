@@ -510,6 +510,28 @@ const msg = (o) => ({
     const msgs = (await call('GET', `/api/leads/${carF.id}/mensajes`)).json.mensajes || [];
     ok(msgs.some((m) => (m.adjuntos || []).some((a) => a.borrado === true)), 'el mensaje se conserva marcado como archivo eliminado');
   }
+  {
+    console.log('Simulador de demostración');
+    const dm = (canal, extra = {}) => call('POST', '/api/demo/mensaje', { canal, nombre: 'Demo ' + canal, texto: 'Hola desde ' + canal, ...extra });
+    ok((await call('POST', '/api/demo/mensaje', { canal: 'whatsapp', texto: 'x' }, { nocookie: true, headers: { cookie: vend } })).status === 403, 'el vendedor no usa el simulador');
+    ok((await dm('whatsapp', { tel: '8888-1111' })).status === 400, 'WhatsApp de demo exige número ficticio (empieza con 9)');
+    const w = await dm('whatsapp', { tel: '9111-2233' });
+    ok(w.status === 200 && /lead creado/.test(w.json.resultado), 'demo WhatsApp: ' + w.json.resultado);
+    ok(/lead creado/.test((await dm('instagram')).json.resultado) && /lead creado/.test((await dm('facebook')).json.resultado), 'demo Instagram y Facebook crean leads');
+    const c1 = await dm('correo', { email: 'demo@ejemplo.com', asunto: 'Precios' });
+    ok(/lead creado/.test(c1.json.resultado), 'demo correo crea lead');
+    ok(/agregado/.test((await dm('correo', { email: 'demo@ejemplo.com' })).json.resultado), 'segundo correo del mismo cliente no duplica');
+    const stD = (await call('GET', '/api/state')).json;
+    ok(['whatsapp', 'instagram', 'facebook', 'correo'].every((c) => stD.leads.some((l) => l.nombre === 'Demo ' + c && l.canal === c)), 'los 4 leads de demo aparecen con su canal y el nombre escrito');
+    const lw = stD.leads.find((l) => l.nombre === 'Demo whatsapp');
+    const rr = await call('POST', `/api/leads/${lw.id}/mensajes`, { texto: 'Hola, con gusto le ayudamos' });
+    ok(rr.status === 201, 'responder a un contacto de demo funciona sin enviar nada a Meta');
+    const cv = (await call('GET', '/api/demo/conversacion?canal=whatsapp&id=50691112233')).json;
+    ok(cv.mensajes.length === 2 && cv.mensajes[1].direccion === 'out', 'el simulador ve la respuesta del equipo');
+    const pg = await fetch(BASE + '/demo', { headers: { cookie } });
+    ok(pg.status === 200 && /Simulador de canales/.test(await pg.text()), 'la página /demo se sirve a quien inició sesión');
+    ok((await fetch(BASE + '/demo', { redirect: 'manual' })).status === 302, '/demo sin iniciar sesión redirige al login');
+  }
   if (process.env.LIC_PRIV) {
     console.log('Licencia de uso');
     const { sign, createPrivateKey } = await import('node:crypto');

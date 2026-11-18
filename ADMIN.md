@@ -55,3 +55,13 @@ node scripts/licencia.mjs ver PULSO1....  # revisar una licencia
 ## Avance del lead (roadmap)
 
 Cada lead muestra arriba de su ficha una línea con las etapas del proceso: las ya recorridas (con fecha y días en cada una), la actual, las pendientes y el porcentaje de avance. Tocar una etapa mueve el lead. El tablero muestra una barra de avance en cada tarjeta. El historial se guarda automáticamente en cada cambio de etapa.
+
+
+## Simulador para demostraciones (/demo)
+
+Con la sesión de administrador iniciada, abre `/demo` (también hay un enlace en Admin → Canales). Es una página con teléfonos de WhatsApp, Instagram, Facebook y correo: escribes como si fueras un cliente y el lead entra a Pulso por el mismo camino que un mensaje real, mientras ves a la derecha los leads nuevos. Si respondes desde Conversaciones, la respuesta aparece en el teléfono simulado.
+
+- Son contactos ficticios (WhatsApp con números que empiezan con 9, p. ej. 9111-2233): no se envía nada a Meta.
+- Los canales deben estar activados en Admin → Canales (el correo no necesita activación).
+- El canal **Correo** crea el lead con el asunto y el texto como nota; todavía no recibe correos reales automáticamente.
+- Los leads de demostración se borran como cualquier otro desde su ficha.

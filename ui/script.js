@@ -1,7 +1,7 @@
 (function(){
 'use strict';
 var ETAPAS=[];
-var CANALES=[['whatsapp','WhatsApp'],['web','Página web'],['instagram','Instagram'],['facebook','Facebook'],['llamada','Llamada'],['otro','Otro']];
+var CANALES=[['whatsapp','WhatsApp'],['web','Página web'],['instagram','Instagram'],['facebook','Facebook'],['correo','Correo'],['llamada','Llamada'],['otro','Otro']];
 var PROVINCIAS=['San José','Alajuela','Cartago','Heredia','Guanacaste','Puntarenas','Limón'];
 var PAISES=['Estados Unidos','Canadá','México','Panamá','Nicaragua','Colombia','España','Francia','Alemania','Reino Unido','Países Bajos','Italia','Suiza'];
 
@@ -169,7 +169,7 @@ function renderPanel(){
   var maxE=Math.max.apply(null,[1].concat(ETAPAS.map(function(e){return cnt(function(l){return l.etapa===e.clave})})));
   var embudo=ETAPAS.map(function(e){var n=cnt(function(l){return l.etapa===e.clave});return '<div class="bar-row"><span>'+esc(e.nombre)+'</span><div class="bar"><i style="width:'+(n/maxE*100)+'%;background:var(--'+e.color+')"></i></div><span class="v">'+n+'</span></div>'}).join('');
   var maxC=Math.max.apply(null,[1].concat(CANALES.map(function(c){return cnt(function(l){return l.canal===c[0]})})));
-  var colorCanal={whatsapp:'wa',instagram:'ig',facebook:'fb',web:'web',llamada:'vio',otro:'web'};
+  var colorCanal={whatsapp:'wa',instagram:'ig',facebook:'fb',correo:'warn',web:'web',llamada:'vio',otro:'web'};
   var canales=CANALES.map(function(c){var n=cnt(function(l){return l.canal===c[0]});return '<div class="bar-row"><span>'+c[1]+'</span><div class="bar"><i style="width:'+(n/maxC*100)+'%;background:var(--'+colorCanal[c[0]]+')"></i></div><span class="v">'+n+'</span></div>'}).join('');
   var perd=S.leads.filter(esPerdido),pm={};
   perd.forEach(function(l){var k=l.motivo||'Sin motivo';pm[k]=(pm[k]||0)+1});

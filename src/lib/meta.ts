@@ -52,7 +52,11 @@ function motivoMeta(data: any, status: number) {
 }
 
 /** Envía un mensaje de texto por WhatsApp. Devuelve el id del mensaje (wamid). */
+/** Contactos de la página /demo: no se envía nada a Meta (números 5069… y ids demo-…). */
+export const esDemoId = (id: string) => /^demo-/.test(id || '') || /^5069\d{7}$/.test(id || '');
+
 export async function enviarWhatsApp(para: string, texto: string): Promise<string> {
+  if (esDemoId(para)) return 'demo-' + Date.now();
   const c = waConfig();
   if (!c.ok) throw new HttpError(503, 'WhatsApp no está conectado: faltan WHATSAPP_TOKEN y WHATSAPP_PHONE_ID.');
   let r: Response;
@@ -268,6 +272,7 @@ type CanalSocial = 'instagram' | 'facebook';
 
 /** Envía un mensaje por Messenger o Instagram. Devuelve el id del mensaje. Solo se puede responder dentro de las 24 h. */
 export async function enviarSocial(canal: CanalSocial, para: string, texto: string): Promise<string> {
+  if (esDemoId(para)) return 'demo-' + Date.now();
   const c = fbConfig();
   if (!c.ok) throw new HttpError(503, 'Instagram y Facebook no están conectados: falta META_PAGE_TOKEN.');
   let r: Response;

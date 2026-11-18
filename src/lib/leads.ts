@@ -4,7 +4,7 @@ import { waConfig, fbConfig } from './meta';
 import { estadoLicencia } from './licencia';
 import type { User } from './auth';
 
-export const CANALES = ['whatsapp', 'web', 'instagram', 'facebook', 'llamada', 'otro'];
+export const CANALES = ['whatsapp', 'web', 'instagram', 'facebook', 'correo', 'llamada', 'otro'];
 export const TIPOS = ['cr', 'ext'];
 export const COLORES = ['accent', 'fb', 'warn', 'vio', 'ok', 'muted', 'ig', 'crit', 'wa'];
 export const TIPOS_ETAPA = ['inicial', 'abierta', 'ganada', 'perdida'];
