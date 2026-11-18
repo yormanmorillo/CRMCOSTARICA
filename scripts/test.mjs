@@ -667,6 +667,12 @@ const msg = (o) => ({
     const tercero = await call('POST', '/api/usuarios', { nombre: 'Tercero', email: 't3@prueba.cr', password: 'otra-clave-123' });
     ok(tercero.status === 402 && /2 usuarios/.test(tercero.json.error), 'la licencia limita la cantidad de usuarios');
     ok((await call('POST', '/api/licencia', { licencia: mk({ vence: '2020-01-01' }) })).json.licencia.estado === 'vencida', 'una licencia vencida se reconoce');
+    const ayer = new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10);
+    const gr = (await call('POST', '/api/licencia', { licencia: mk({ vence: ayer }) })).json.licencia;
+    ok(gr.estado === 'gracia' && gr.puedeEscribir, 'recién vencida: 7 días de cortesía, sigue funcionando');
+    ok((await call('GET', '/api/licencia')).json.puedeEmitir === false, 'sin llave privada en el servidor no se pueden emitir licencias');
+    ok((await call('POST', '/api/licencia/emitir', { cliente: 'X' })).status === 403, 'emitir licencias solo en la instalación del proveedor');
+    await call('POST', '/api/licencia', { licencia: mk({ vence: '2020-01-01' }) });
     ok((await call('POST', '/api/leads', { nombre: 'Bloqueado' })).status === 402, 'vencida: no se puede escribir');
     ok((await call('GET', '/api/state')).status === 200, 'vencida: sí se puede ver todo');
     const rw = await waHook(waText('50660009999', 'wamid.LIC', 'hola con licencia vencida', 'Cliente Lic'));

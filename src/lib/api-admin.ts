@@ -3,7 +3,7 @@ import { q } from './db';
 import { HttpError, json, uid, str } from './util';
 import { loadLead, getEtapas, logAct, COLORES, TIPOS_ETAPA, MONEDAS } from './leads';
 import { route, body, mustLead } from './router';
-import { estadoLicencia, leerLicencia, limpiarCacheLicencia } from './licencia';
+import { estadoLicencia, leerLicencia, limpiarCacheLicencia, puedeEmitir, emitirLicencia } from './licencia';
 import { setSetting } from './leads';
 
 const num = (v: unknown, min: number, max: number, def: number) => {
@@ -290,8 +290,19 @@ route('DELETE', '/motivos/:id', async ({ params }) => {
 /* ---------- Licencia ---------- */
 route('GET', '/licencia', async () => {
   const n = (await q('select count(*)::int as n from usuarios'))[0].n;
-  return json({ licencia: await estadoLicencia(), usuariosActuales: n });
+  return json({ licencia: await estadoLicencia(), usuariosActuales: n, puedeEmitir: puedeEmitir() });
 }, { admin: true });
+
+route('POST', '/licencia/emitir', async ({ req }) => {
+  if (!puedeEmitir()) throw new HttpError(403, 'Esta instalación no puede emitir licencias.');
+  const b = await body(req);
+  const cliente = String(b.cliente || '').trim().slice(0, 120);
+  if (!cliente) throw new HttpError(400, 'Escribe el nombre del cliente.');
+  const vence = b.vence ? String(b.vence) : null;
+  if (vence && !/^\d{4}-\d{2}-\d{2}$/.test(vence)) throw new HttpError(400, 'La fecha debe ser AAAA-MM-DD.');
+  const usuarios = Math.max(0, parseInt(String(b.usuarios ?? 0), 10) || 0);
+  return json({ licencia: emitirLicencia(cliente, vence, usuarios) });
+}, { admin: true, libre: true });
 
 route('POST', '/licencia', async ({ req }) => {
   const token = String((await body(req)).licencia || '').trim();

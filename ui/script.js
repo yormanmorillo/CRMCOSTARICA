@@ -995,7 +995,8 @@ function renderLic(){
   var L=S.licencia||{},b=$('#licBar'),txt='',mal=false,adm=S.me.rol==='admin';
   if(L.estado==='prueba')txt='Prueba gratuita: te quedan '+pl(L.diasRestantes,'día','días')+'.';
   else if(L.estado==='prueba_vencida'||L.estado==='vencida'||L.estado==='invalida'){txt=L.mensaje||'La licencia no está activa. El sistema está en solo lectura.';mal=true}
-  else if(L.estado==='valida'&&L.diasRestantes!=null&&L.diasRestantes<=15)txt='Tu licencia vence en '+pl(L.diasRestantes,'día','días')+'.';
+  else if(L.estado==='gracia')txt=L.mensaje;
+  else if(L.estado==='valida'&&L.diasRestantes!=null&&L.diasRestantes<=30)txt='Tu licencia vence en '+pl(L.diasRestantes,'día','días')+'.';
   b.hidden=!txt;b.className='lic'+(mal?' mal':'');
   b.innerHTML=esc(txt)+(txt&&adm?' <button type="button" data-action="adm-go" data-sec="licencia">Ingresar licencia</button>':'');
 }

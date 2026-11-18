@@ -187,11 +187,22 @@ SEC.perdidos=function(out){
 SEC.licencia=function(out,ok){
   return api('GET','/licencia').then(function(r){
     if(!ok())return;
-    var L=r.licencia,est={sin_sistema:'Sin control de licencia',valida:'Activa',vencida:'Vencida',invalida:'No válida',prueba:'Prueba gratuita',prueba_vencida:'Prueba terminada'}[L.estado]||L.estado;
-    out('<div class="card"><h2>Licencia de uso</h2><dl class="kv"><dt>Estado</dt><dd><span class="pill '+(L.estado==='valida'||L.estado==='prueba'||L.estado==='sin_sistema'?'p-ok':'p-crit')+'">'+esc(est)+'</span></dd>'+
-      (L.cliente?'<dt>Licenciado a</dt><dd>'+esc(L.cliente)+'</dd>':'')+(L.vence?'<dt>Vence</dt><dd>'+esc(L.vence)+(L.diasRestantes!=null?' ('+relDays(L.diasRestantes).replace(/^en /,'en ')+')':'')+'</dd>':(L.estado==='valida'?'<dt>Vence</dt><dd>Nunca (licencia permanente)</dd>':''))+
-      '<dt>Usuarios</dt><dd>'+r.usuariosActuales+(L.usuarios?' de '+L.usuarios:' (sin límite)')+'</dd></dl><p class="sub" style="margin:12px 0 0">'+esc(L.mensaje||'')+'</p></div>'+
-      '<div class="card"><h2>Ingresar licencia</h2><p class="sub">Pega aquí la licencia que te entregó tu proveedor (empieza con PULSO1.). Se activa al instante.</p><form data-form="lic"><textarea class="in" name="licencia" rows="4" required placeholder="PULSO1...." style="font-family:monospace;font-size:12px"></textarea><button class="btn primary" type="submit" style="margin-top:10px">Activar licencia</button></form></div>');
+    var L=r.licencia,E={sin_sistema:['Sin control de licencia','p-ok'],valida:['Activa','p-ok'],gracia:['Vencida (días de cortesía)','p-warn'],vencida:['Vencida: solo lectura','p-crit'],invalida:['No válida','p-crit'],prueba:['Prueba gratuita','p-ok'],prueba_vencida:['Prueba terminada: solo lectura','p-crit']}[L.estado]||[L.estado,'p-ok'];
+    var tot=L.estado==='prueba'?14:(L.vence&&L.emitida?Math.max(1,Math.round((Date.parse(L.vence)-Date.parse(L.emitida))/864e5)):0);
+    var pct=L.diasRestantes!=null&&tot?Math.max(0,Math.min(100,Math.round(L.diasRestantes/tot*100))):100;
+    var sop=(S.settings&&S.settings.soporteEmail)||'';
+    var plan=L.estado==='prueba'||L.estado==='prueba_vencida'?'Prueba gratuita':(L.cliente?'Plan de '+esc(L.cliente):'Plan de servicio');
+    var h='<div class="card"><h2>Tu plan</h2><div class="plan"><b>'+plan+'</b><span class="pill '+E[1]+'">'+esc(E[0])+'</span></div>'+
+      (L.diasRestantes!=null?'<div class="plan-bar"><i style="width:'+pct+'%"></i></div><p class="sub" style="margin:6px 0 0">'+(L.diasRestantes>=0?'Quedan '+pl(L.diasRestantes,'día','días')+(L.vence?' (vence el '+esc(L.vence)+')':''):'Venció hace '+pl(-L.diasRestantes,'día','días'))+'</p>':(L.estado==='valida'?'<p class="sub" style="margin:6px 0 0">Licencia permanente: no vence.</p>':''))+
+      '<dl class="kv" style="margin-top:12px"><dt>Usuarios</dt><dd>'+r.usuariosActuales+(L.usuarios?' de '+L.usuarios+' permitidos':' (sin límite)')+'</dd></dl>'+
+      '<p class="sub" style="margin:10px 0 0">'+esc(L.mensaje||'')+'</p>'+
+      (L.estado!=='valida'&&L.estado!=='sin_sistema'||(L.diasRestantes!=null&&L.diasRestantes<=30)?'<p style="margin:12px 0 0"><button class="btn primary" type="button" data-action="lic-renovar" data-mail="'+esc(sop)+'">Pedir renovación o licencia</button></p><p class="sub" id="licMail" style="margin:6px 0 0"></p>':'')+
+      '</div>'+
+      '<div class="card"><h2>¿Cómo funciona?</h2><ol class="pasos"><li><b>Pruebas gratis 14 días.</b> Todo funciona desde el primer día.</li><li><b>Pides tu licencia.</b> Tu proveedor te manda un texto largo que empieza con <code>PULSO1.</code> (por correo o WhatsApp).</li><li><b>La pegas aquí abajo.</b> Se activa al instante, sin reiniciar nada.</li><li><b>Si vence,</b> tienes 7 días de cortesía. Después el sistema queda en solo lectura: <u>nunca pierdes tus datos</u>, solo no puedes editar hasta renovar.</li></ol>'+
+      '<p class="sub" style="margin:8px 0 0">La licencia indica el cliente, la fecha de vencimiento y cuántos usuarios puedes crear. No se puede alterar: está firmada.</p></div>'+
+      '<div class="card"><h2>Activar una licencia</h2><form data-form="lic"><textarea class="in" name="licencia" rows="4" required placeholder="Pega aquí la licencia (PULSO1....)" style="font-family:monospace;font-size:12px"></textarea><button class="btn primary" type="submit" style="margin-top:10px">Activar licencia</button></form></div>';
+    if(r.puedeEmitir)h+='<div class="card"><h2>Emitir licencia <span class="pill p-ok">solo proveedor</span></h2><p class="sub">Esta opción aparece solo en tu instalación (tiene tu llave privada). Genera la licencia y se la envías a tu cliente.</p><form data-form="lic-emitir"><label class="lbl">Cliente<input class="in" name="cliente" required placeholder="Clínica Sol"></label><div class="row2"><label class="lbl">Vence (vacío = permanente)<input class="in" type="date" name="vence"></label><label class="lbl">Usuarios (0 = sin límite)<input class="in" type="number" min="0" name="usuarios" value="5"></label></div><button class="btn primary" type="submit" style="margin-top:10px">Generar licencia</button></form><textarea class="in" id="licOut" rows="4" readonly hidden style="font-family:monospace;font-size:12px;margin-top:10px"></textarea></div>';
+    out(h);
   });
 };
 
@@ -204,6 +215,7 @@ window.adminAct=function(a,el,id){
     case 'co-probar':{var pc=$('#coProbe');pc.textContent='Probando…';api('POST','/admin/correo/probar',{}).then(function(r){pc.textContent='✓ Recibir correos: conectado. Enviar: '+(r.smtp==='ok'?'conectado':'falló ('+r.smtp.replace(/^error: /,'')+')')}).catch(function(e){pc.textContent='✗ '+e.message});break}
     case 'co-revisar':{var pr2=$('#coProbe');pr2.textContent='Revisando…';api('POST','/admin/correo/revisar').then(function(r){pr2.textContent='✓ '+r.msg+(r.ignorados?' · '+pl(r.ignorados,'ignorado','ignorados'):'');return admSync()}).catch(function(e){pr2.textContent='✗ '+e.message});break}
     case 'wa-probar':{var pr=$('#waProbe');pr.textContent='Probando…';api('POST','/whatsapp/probar').then(function(r){pr.textContent='Conectado: '+(r.numero||'número sin nombre')+(r.nombre?' ('+r.nombre+')':'')}).catch(function(e){pr.textContent=e.message});break}
+    case 'lic-renovar':{var em=el.dataset.mail,m=$('#licMail'),txt='Hola, necesito renovar o activar la licencia de Pulso CRM ('+((S.settings&&S.settings.negocio)||'')+').';if(em){location.href='mailto:'+em+'?subject='+encodeURIComponent('Licencia Pulso CRM')+'&body='+encodeURIComponent(txt)}m.innerHTML='Escribe a tu proveedor'+(em?' (<b>'+esc(em)+'</b>)':'')+' y pídele la licencia. Dile el nombre de tu negocio.';break}
     case 'copy-snip':copyText(window.__snip||'',el);break;
     case 'web-regen':if(armed(el,'Toca otra vez: la clave anterior dejará de funcionar'))api('POST','/canales/web/token').then(function(){toast('Clave nueva generada');admRender()}).catch(fail);break;
     case 'et-mover':api('POST','/etapas/mover',{clave:k,dir:el.dataset.dir}).then(admSync).then(admRender).catch(admErr);break;
@@ -263,6 +275,7 @@ window.adminSubmit=function(f,kind,fd,g,done){
   if(kind==='rol-add')return run(api('POST','/roles',{nombre:g('nombre'),permisos:fd.getAll('perm')}),'Rol creado');
   if(kind==='us-pin')return run(api('PATCH','/usuarios/'+f.dataset.k,{pin:String(fd.get('pin')||'')}),'PIN guardado');
   if(kind==='us-pass')return run(api('PATCH','/usuarios/'+f.dataset.k,{password:String(fd.get('password')||'')}),'Contraseña cambiada');
+  if(kind==='lic-emitir')return api('POST','/licencia/emitir',{cliente:g('cliente'),vence:g('vence'),usuarios:g('usuarios')}).then(function(r){var o=$('#licOut');o.hidden=false;o.value=r.licencia;o.select();toast('Licencia generada: cópiala y envíala a tu cliente')}).catch(admErr);
   if(kind==='lic')return run(api('POST','/licencia',{licencia:g('licencia')}),'Licencia guardada');
   return false;
 };

@@ -1,13 +1,14 @@
-import { createPublicKey, verify } from 'node:crypto';
+import { createPublicKey, createPrivateKey, sign, verify, randomBytes } from 'node:crypto';
 import { q } from './db';
 import { LLAVE_PUBLICA } from './llave-publica';
 
 export const PRUEBA_DIAS = 14;
+export const GRACIA_DIAS = 7; // días de cortesía después de vencer: el sistema sigue funcionando con aviso
 
 export type DatosLicencia = { v: number; id: string; cliente: string; emitida: string; vence: string | null; usuarios: number };
 export type EstadoLic = {
   sistema: boolean; // ¿hay llave pública? Si no, las licencias están desactivadas.
-  estado: 'sin_sistema' | 'valida' | 'vencida' | 'invalida' | 'prueba' | 'prueba_vencida';
+  estado: 'sin_sistema' | 'valida' | 'gracia' | 'vencida' | 'invalida' | 'prueba' | 'prueba_vencida';
   cliente: string;
   emitida: string;
   vence: string | null;
@@ -63,6 +64,7 @@ async function calcular(): Promise<EstadoLic> {
     const l = r.lic;
     const d = l.vence ? dias(l.vence, hoy()) : null;
     const info = { cliente: l.cliente, emitida: l.emitida, vence: l.vence, diasRestantes: d, usuarios: Number(l.usuarios) || 0 };
+    if (d !== null && d < 0 && -d <= GRACIA_DIAS) return { ...info, sistema: true, estado: 'gracia', puedeEscribir: true, mensaje: `La licencia venció hace ${-d} día(s). Tienes ${GRACIA_DIAS + d} día(s) de cortesía para renovarla antes de que el sistema quede en solo lectura.` };
     if (d !== null && d < 0) return { ...info, sistema: true, estado: 'vencida', puedeEscribir: false, mensaje: `La licencia venció hace ${-d} días. Pide una renovación para seguir editando.` };
     return { ...info, sistema: true, estado: 'valida', puedeEscribir: true, mensaje: d === null ? 'Licencia permanente.' : `La licencia vence en ${d} días.` };
   }
@@ -83,3 +85,14 @@ export async function estadoLicencia(): Promise<EstadoLic> {
 export const limpiarCacheLicencia = () => {
   G.__licCache = null;
 };
+
+/** Solo funciona en la instalación del VENDEDOR: requiere la variable LICENCIA_PRIVATE_KEY (llave privada PEM). */
+export const puedeEmitir = () => !!(process.env.LICENCIA_PRIVATE_KEY || '').trim();
+
+export function emitirLicencia(cliente: string, vence: string | null, usuarios: number): string {
+  const pem = (process.env.LICENCIA_PRIVATE_KEY || '').replace(/\\n/g, '\n').trim();
+  const b = (x: Buffer) => x.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const datos = { v: 1, id: randomBytes(6).toString('hex'), cliente, emitida: hoy(), vence, usuarios };
+  const payload = b(Buffer.from(JSON.stringify(datos)));
+  return `PULSO1.${payload}.${b(sign(null, Buffer.from(payload), createPrivateKey(pem)))}`;
+}
