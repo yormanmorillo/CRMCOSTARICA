@@ -101,6 +101,9 @@ var C={y:parse(today()).getFullYear(),m:parse(today()).getMonth(),sel:today()};
 var ibId=null,IB={f:'todas',q:''};
 var CH={dr:{box:'chatBox',hint:'replyHint',btn:'replyBtn',ta:'replyText'},ib:{box:'ibBox',hint:'ibHint',btn:'ibBtn',ta:'ibText'}};
 
+function temaActual(){var t=document.documentElement.dataset.theme;if(t==='dark'||t==='light')return t;return window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'}
+function pintarTema(){var b=$('#themeBtn');if(!b)return;var d=temaActual()==='dark';b.textContent=d?'☀ Modo luz':'☾ Modo noche';b.classList.add('themebtn')}
+function cambiarTema(){var n=temaActual()==='dark'?'light':'dark';document.documentElement.dataset.theme=n;try{localStorage.setItem('pulso-tema',n)}catch(e){}pintarTema()}
 function toast(msg){var el=$('#toast');el.textContent=msg;el.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(function(){el.hidden=true},3800)}
 function lockScroll(){document.body.style.overflow=$$('.ov').some(function(o){return !o.hidden})?'hidden':''}
 function showOv(id){$('#'+id).hidden=false;lockScroll()}
@@ -153,6 +156,15 @@ function renderPanel(){
     return '<div class="item" style="cursor:default"><button class="ck" data-action="task-toggle" data-id="'+k.id+'" aria-pressed="false" aria-label="Marcar tarea como hecha"></button><div class="im" '+(l?'data-open="'+l.id+'" style="cursor:pointer"':'')+'><b>'+esc(k.titulo)+'</b><small>'+(l?esc(l.nombre)+' · ':'')+fmt(k.fecha)+(k.hora?' · '+esc(k.hora):'')+'</small></div>'+(late?'<span class="pill p-crit">Atrasada</span>':'<span class="pill p-warn">Hoy</span>')+'</div>';
   }).join(''):'<div class="empty">No tienes tareas pendientes para hoy.</div>';
 
+  var lim=addDays(t,14);
+  var prox=S.tasks.filter(function(k){return !k.hecha&&k.fecha>t&&k.fecha<=lim}).sort(function(a,b){return (a.fecha+(a.hora||''))<(b.fecha+(b.hora||''))?-1:1});
+  var proxHtml='',ult='';
+  prox.forEach(function(k){
+    if(k.fecha!==ult){ult=k.fecha;var dd=parse(k.fecha);proxHtml+='<div class="tkgrp">'+relDays(diff(k.fecha,t))+' · '+esc(dd.toLocaleDateString('es-CR',{weekday:'short',day:'numeric',month:'short'}).replace(/\./g,''))+'</div>'}
+    var l=k.leadId?lead(k.leadId):null;
+    proxHtml+='<div class="item" style="cursor:default"><button class="ck" data-action="task-toggle" data-id="'+k.id+'" aria-pressed="false" aria-label="Marcar tarea como hecha"></button><div class="im" '+(l?'data-open="'+l.id+'" style="cursor:pointer"':'')+'><b>'+esc(k.titulo)+'</b><small>'+(l?esc(l.nombre)+' · ':'')+(k.hora?esc(k.hora):'Sin hora')+'</small></div></div>';
+  });
+  if(!proxHtml)proxHtml='<div class="empty">No hay tareas programadas para los próximos 14 días.</div>';
   var cnt=function(f){return S.leads.filter(f).length};
   var maxE=Math.max.apply(null,[1].concat(ETAPAS.map(function(e){return cnt(function(l){return l.etapa===e.clave})})));
   var embudo=ETAPAS.map(function(e){var n=cnt(function(l){return l.etapa===e.clave});return '<div class="bar-row"><span>'+esc(e.nombre)+'</span><div class="bar"><i style="width:'+(n/maxE*100)+'%;background:var(--'+e.color+')"></i></div><span class="v">'+n+'</span></div>'}).join('');
@@ -174,6 +186,7 @@ function renderPanel(){
       '<div class="card"><h2>Leads sin primera atención</h2><p class="sub">Entraron por algún canal y nadie los ha contactado.</p>'+sinHtml+'</div>'+
     '</div><div class="stack">'+
       '<div class="card"><h2>Tareas de hoy y atrasadas</h2><p class="sub">Marca el círculo cuando termines.</p>'+tkHtml+'</div>'+
+      '<div class="card"><h2>Tareas de los próximos días</h2><p class="sub">'+pl(prox.length,'tarea','tareas')+' en los próximos 14 días. <a href="#calendario">Ver calendario</a></p>'+proxHtml+'</div>'+
       '<div class="card"><h2>Por qué se pierden</h2><p class="sub">'+pl(perd.length,'lead perdido','leads perdidos')+(S.me.rol==='admin'&&perd.length?' · <a href="#admin" data-action="adm-go" data-sec="perdidos">ver detalle</a>':'')+'</p>'+perdidos+'</div>'+
       '<div class="card"><h2>Resumen</h2><p class="sub">Etapa de los '+S.leads.length+' leads</p><div class="bars">'+embudo+'</div>'+
         '<p class="sub" style="margin-top:18px">Canal de entrada</p><div class="bars">'+canales+'</div>'+
@@ -301,7 +314,7 @@ function renderAll(){
 function setView(v){
   var vistas=['panel','leads','calendario','conversaciones','admin'];
   if(vistas.indexOf(v)<0||(v==='admin'&&S.me.rol!=='admin'))v='panel';
-  view=v;
+  view=v;document.body.dataset.view=v;
   vistas.forEach(function(x){$('#v-'+x).hidden=x!==v});
   $$('.tabs button').forEach(function(b){if(b.dataset.view===v)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
   renderAll();
@@ -379,10 +392,13 @@ function openLead(id){
     '<div class="acts" id="drActs"><button class="btn sm" data-action="dr-go" data-t="sec-prod" data-f="prodSel">+ Producto</button><button class="btn sm" data-action="dr-go" data-t="sec-task" data-f="tkTitulo">Tarea</button><button class="btn sm" data-action="dr-go" data-t="sec-att" data-f="attNota" data-canal="llamada">Registrar llamada</button><button class="btn sm" data-action="dr-go" data-t="sec-nota" data-f="notaText">Nota</button>'+
       (l.tieneChat?'<button class="btn sm" data-action="dr-go" data-t="sec-chat" data-f="replyText">Mensaje</button>':'')+
       '<button class="btn sm" data-action="dr-go" data-t="sec-datos" data-f="tagIn">Etiquetas</button></div>'+
-    chat+
+    '<div class="dcol">'+chat+
     '<section id="sec-datos"><h3>Datos del lead</h3><div id="drData"></div><div id="drTags" style="margin-top:12px"></div></section>'+
-    '<section id="sec-prod"><h3>Productos</h3><div id="drProd"></div></section>'+
     '<section id="sec-rem"><h3>Llegada y recordatorio</h3><div id="drRem"></div></section>'+
+    '<section id="sec-files"><h3>Archivos adjuntos</h3>'+
+      '<label class="drop" id="dropZone"><input type="file" id="fileIn" accept="image/*" multiple><b style="color:var(--fg)">Agregar imágenes</b><span>Toca para elegir o arrastra las fotos aquí</span></label>'+
+      '<div id="drFiles"></div></section>'+
+    '</div><div class="dcol"><section id="sec-prod"><h3>Productos</h3><div id="drProd"></div></section>'+
     '<section id="sec-att"><h3>Atenciones</h3>'+
       '<form class="fg" data-form="att">'+
         '<label class="fl">Día de atención<input class="in" id="attFecha" name="fecha" type="date" required value="'+today()+'"></label>'+
@@ -400,11 +416,9 @@ function openLead(id){
         '<label class="fl">Hora (opcional)<input class="in" id="tkHora" name="hora" type="time"></label>'+
         '<button class="btn full" type="submit">Agregar al calendario</button></form>'+
       '<div id="drTasks"></div></section>'+
-    '<section id="sec-files"><h3>Archivos adjuntos</h3>'+
-      '<label class="drop" id="dropZone"><input type="file" id="fileIn" accept="image/*" multiple><b style="color:var(--fg)">Agregar imágenes</b><span>Toca para elegir o arrastra las fotos aquí</span></label>'+
-      '<div id="drFiles"></div></section>'+
     '<section id="sec-act"><h3>Línea de tiempo</h3><div id="drAct"></div></section>'+
-    '<section><button class="btn danger" type="button" data-action="del-lead">Eliminar este lead</button></section>';
+    '</div>'+
+    '<section id="sec-del"><button class="btn danger" type="button" data-action="del-lead">Eliminar este lead</button></section>';
   renderDrHead();renderDrData();renderDrTags();renderDrProd();renderDrRem();renderDrAtt();renderDrNotas();renderDrTasks();renderDrFiles();renderDrAct();
   showOv('drawerOv');
   $('#drBody').scrollTop=0;
@@ -450,14 +464,15 @@ function renderDrProd(){
       '<button class="x" data-action="prod-del" data-id="'+it.id+'" aria-label="Quitar '+esc(it.nombre)+'">Quitar</button></div>';
   }).join('')+'<div class="total">'+Object.keys(tot).map(function(m){return '<span>Total '+esc(fm(m,tot[m]))+'</span>'}).join('')+'</div></div>':'<p class="muted" style="margin:0 0 12px">Todavía no hay productos en este lead.</p>';
   var cat=S.productos.map(function(p){return '<option value="'+p.id+'">'+esc(p.nombre+' · '+(p.moneda==='USD'?USD(p.precio):CRC(p.precio)))+'</option>'}).join('');
-  el.innerHTML=lista+'<form class="fg" data-form="prod">'+
+  var ayuda=S.productos.length?'':'<div class="prodhelp"><span>Todavía no hay productos en el catálogo. Puedes escribir uno a mano abajo'+(S.me.rol==='admin'?', o crear tu catálogo para elegirlo con un clic.':'. Pídele al administrador que cree el catálogo.')+'</span>'+(S.me.rol==='admin'?'<button class="btn sm" type="button" data-action="adm-go" data-sec="productos">Crear productos</button>':'')+'</div>';
+  el.innerHTML=lista+ayuda+'<form class="fg" data-form="prod">'+
     '<label class="fl full">Producto del catálogo<select class="in" id="prodSel" name="productoId"><option value="">Otro (escribe el nombre abajo)</option>'+cat+'</select></label>'+
     '<label class="fl">Cantidad<input class="in" name="cantidad" type="number" min="0.01" step="any" value="1"></label>'+
     '<label class="fl">Precio (si lo cambias)<input class="in" name="precio" type="number" min="0" step="any" placeholder="Usa el del catálogo"></label>'+
     '<label class="fl">Si es otro: nombre<input class="in" name="nombre" maxlength="120"></label>'+
     '<label class="fl">Moneda<select class="in" name="moneda"><option value="CRC">Colones (₡)</option><option value="USD">Dólares ($)</option></select></label>'+
     '<button class="btn full" type="submit">Agregar al lead</button></form>'+
-    (S.productos.length||S.me.rol!=='admin'?'':'<p class="hint">Aún no hay catálogo. Créalo en Admin, Productos.</p>');
+    '';
 }
 function renderDrNotas(){
   var el=$('#drNotas');if(!el)return;
@@ -618,6 +633,7 @@ function openNew(){
     '<label class="fl">Correo<input class="in" id="nEmail" name="email" type="email"></label>'+
     '<div class="grp" data-for="cr"><label class="fl">Cédula<input class="in" id="nCedula" name="cedula" placeholder="1-2345-6789"></label><label class="fl">Provincia<select class="in" id="nProv" name="provincia"><option value="">Sin indicar</option>'+PROVINCIAS.map(function(p){return '<option>'+p+'</option>'}).join('')+'</select></label></div>'+
     '<div class="grp" data-for="ext" hidden><label class="fl">País<input class="in" id="nPais" name="pais" list="paisesN"><datalist id="paisesN">'+PAISES.map(function(p){return '<option value="'+p+'">'}).join('')+'</datalist></label><label class="fl">Pasaporte (opcional)<input class="in" id="nPas" name="pasaporte"></label></div>'+
+    (S.productos.length?'<label class="fl">Producto de interés (opcional)<select class="in" name="productoId"><option value="">Ninguno</option>'+S.productos.map(function(p){return '<option value="'+p.id+'">'+esc(p.nombre)+'</option>'}).join('')+'</select></label><label class="fl">Cantidad<input class="in" name="cantidad" type="number" min="1" step="any" value="1"></label>':'')+
     '<label class="fl full">Qué consulta<textarea class="in" id="nInteres" name="interes" rows="2" placeholder="Ej: Precio y disponibilidad para 4 personas"></textarea></label>'+
     '<label class="fl">Fecha de llegada (si la dice)<input class="in" id="nLlegada" name="llegada" type="date" data-llegada></label>'+
     '<label class="fl">O llega en… (días)<input class="in" id="nDias" type="number" min="0" max="365" data-dias placeholder="Ej: 20"></label>'+
@@ -652,6 +668,7 @@ function act(a,el){
   switch(a){
     case 'nav':location.hash='#'+el.dataset.view;break;
     case 'new-lead':openNew();break;
+    case 'theme':cambiarTema();break;
     case 'logout':api('POST','/auth/logout').then(function(){location.href='/login'}).catch(function(){location.href='/login'});break;
     case 'ib-open':openThread(id);break;
     case 'ib-back':$('#inbox').classList.remove('abierto');ibId=null;$('#ibThread').dataset.vacio='';renderInboxList();break;
@@ -686,7 +703,7 @@ function act(a,el){
     case 'cal-next':C.m++;if(C.m>11){C.m=0;C.y++}renderCal();break;
     case 'cal-today':{var n=parse(today());C.y=n.getFullYear();C.m=n.getMonth();C.sel=today();renderCal();break}
     case 'cal-sel':{C.sel=el.dataset.date;var d=parse(C.sel);C.y=d.getFullYear();C.m=d.getMonth();renderCal();break}
-    default:if(window.adminAct)window.adminAct(a,el,id);
+    default:if(a==='adm-go'&&openId)closeOv('drawerOv');if(window.adminAct)window.adminAct(a,el,id);
   }
 }
 document.addEventListener('click',function(e){
@@ -768,7 +785,10 @@ document.addEventListener('submit',function(e){
   var done=function(){if(btn)btn.disabled=false};
   if(kind==='new'){
     api('POST','/leads',{nombre:g('nombre'),tel:g('tel'),email:g('email'),canal:g('canal'),tipo:g('tipo')||'cr',cedula:g('cedula'),provincia:g('provincia'),pais:g('pais'),pasaporte:g('pasaporte'),empresa:g('empresa'),interes:g('interes'),llegada:g('llegada'),avisoDias:g('avisoDias')})
-      .then(function(r){put(r.lead);closeOv('modalOv');renderAll();openLead(r.lead.id);toast('Lead guardado')}).catch(fail).then(done);
+      .then(function(r){
+        if(!g('productoId'))return r;
+        return api('POST','/leads/'+r.lead.id+'/productos',{productoId:g('productoId'),cantidad:g('cantidad')||1}).then(function(r2){return r2}).catch(function(){return r});
+      }).then(function(r){put(r.lead);closeOv('modalOv');renderAll();openLead(r.lead.id);toast('Lead guardado')}).catch(fail).then(done);
   }
   if(kind==='att'){
     var id=openId;

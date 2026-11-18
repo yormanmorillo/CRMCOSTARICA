@@ -1,2 +1,3 @@
+pintarTema();
 boot();
 })();
