@@ -53,6 +53,8 @@ const msg = (o) => ({
   ok((await call('GET', '/', undefined, { nocookie: true })).status === 302, 'la página principal redirige al login si no hay sesión');
   ok((await call('GET', '/')).text.includes('Pulso CRM'), 'la página principal carga con sesión');
   ok((await call('GET', '/login')).status === 302, 'el login redirige si ya hay sesión');
+  const stp = (await call('GET', '/api/state')).json;
+  ok(stp.chatwoot.panelUrl === (process.env.EXPECT_PANEL_URL || 'https://chat.ejemplo.com/app/accounts/1/dashboard'), 'el estado trae la dirección del panel de Chatwoot para la pestaña Conversaciones');
 
   console.log('Webhook: seguridad');
   const base = msg({ id: 1, content: 'hola', conv: 10, channel: 'Channel::Whatsapp', sender: { id: 100, name: 'X', type: 'contact' } });

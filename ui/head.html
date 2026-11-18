@@ -227,7 +227,14 @@ footer{margin-top:28px;color:var(--muted);font-size:12px}
 .evl{display:flex;flex-direction:column;gap:6px;font-size:13px;max-height:180px;overflow:auto}
 .evl div{display:flex;gap:10px;justify-content:space-between;border-top:1px solid var(--line);padding-top:6px}
 .sec{border-top:1px solid var(--line);padding-top:16px;display:flex;flex-direction:column;gap:10px}
+.tabs button{min-width:0;white-space:nowrap}
+.t-corto{display:none}
+@media(max-width:560px){.t-largo{display:none}.t-corto{display:inline}}
+@media(max-width:560px){.tabs button{padding:8px 5px;font-size:13px;gap:5px}.tabs .badge{padding:1px 5px;min-width:16px}}
 .who{font-size:13px;color:var(--muted)}
+.chatbar{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-bottom:10px}
+.chatbar p{margin:0;flex:1 1 280px}
+.chatframe{display:block;width:100%;height:calc(100vh - 190px);min-height:520px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
 @media(max-width:560px){.who{display:none}}
 </style>
 </head><body>
@@ -242,6 +249,7 @@ footer{margin-top:28px;color:var(--muted);font-size:12px}
       <button data-action="nav" data-view="panel">Panel <span class="badge" id="bdg" hidden></span></button>
       <button data-action="nav" data-view="leads">Leads</button>
       <button data-action="nav" data-view="calendario">Calendario</button>
+      <button data-action="nav" data-view="conversaciones" id="tabChat" hidden><span class="t-largo">Conversaciones</span><span class="t-corto">Chats</span> <span class="badge" id="bdgChat" hidden></span></button>
     </nav>
     <div class="actions">
       <span class="who" id="who"></span><button class="btn" data-action="settings">Ajustes</button><button class="btn" data-action="logout">Salir</button>
@@ -269,6 +277,15 @@ footer{margin-top:28px;color:var(--muted);font-size:12px}
       </div>
       <p id="leadCount" class="muted" style="margin:0 0 10px"></p>
       <div id="leadList"></div>
+    </section>
+
+    <section id="v-conversaciones" class="view" aria-label="Conversaciones" hidden>
+      <div class="chatbar">
+        <p class="muted" id="chatNote">Aquí está tu Chatwoot, con todos tus canales. Los leads nuevos aparecen solos en Pulso CRM.</p>
+        <a class="btn sm" id="chatOpen" href="#" target="_blank" rel="noopener">Abrir en una pestaña nueva</a>
+      </div>
+      <iframe id="chatFrame" class="chatframe" title="Chatwoot" referrerpolicy="strict-origin-when-cross-origin" allow="clipboard-write; microphone; notifications"></iframe>
+      <p class="muted" style="margin:8px 0 0;font-size:12px">Si ves una pantalla en blanco o te pide entrar otra vez, abre Chatwoot en una pestaña nueva con el botón de arriba.</p>
     </section>
 
     <section id="v-calendario" class="view" aria-label="Calendario" hidden>

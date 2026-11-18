@@ -156,7 +156,7 @@ function renderPanel(){
     '</div></div>';
 }
 function updateBadge(){
-  var due=reminders(7).filter(function(l){return diff(avisoFecha(l),today())<=0}).length+S.leads.filter(function(l){return l.esperando&&activo(l)}).length;
+  var due=reminders(7).filter(function(l){return diff(avisoFecha(l),today())<=0}).length;
   var b=$('#bdg');b.hidden=!due;b.textContent=due;
 }
 
@@ -258,11 +258,26 @@ function renderAll(){
   if(view==='calendario')renderCal();
 }
 function setView(v){
-  if(['panel','leads','calendario'].indexOf(v)<0)v='panel';
+  var vistas=['panel','leads','calendario','conversaciones'];
+  if(vistas.indexOf(v)<0||(v==='conversaciones'&&!S.chatwoot.panelUrl))v='panel';
   view=v;
-  ['panel','leads','calendario'].forEach(function(x){$('#v-'+x).hidden=x!==v});
+  vistas.forEach(function(x){$('#v-'+x).hidden=x!==v});
+  if(v==='conversaciones')cargarChat();
   $$('.tabs button').forEach(function(b){if(b.dataset.view===v)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
   renderAll();
+}
+/* ---------- Pestaña Conversaciones: Chatwoot dentro de Pulso CRM ---------- */
+function cargarChat(){
+  var f=$('#chatFrame'),u=S.chatwoot.panelUrl;
+  if(!f||!u)return;
+  if(f.getAttribute('src')!==u&&!f.dataset.listo){f.dataset.listo='1';f.setAttribute('src',u)}
+  $('#chatOpen').setAttribute('href',u);
+}
+function ajustarPestanaChat(){
+  var t=$('#tabChat');if(!t)return;
+  t.hidden=!S.chatwoot.panelUrl;
+  var n=S.leads.filter(function(l){return l.esperando&&activo(l)}).length;
+  var b=$('#bdgChat');b.hidden=!n;b.textContent=n;
 }
 function refresh(){
   renderAll();
@@ -660,6 +675,7 @@ function applyState(st,quiet){
   sig=s;
   S=st;
   applyBrand();
+  ajustarPestanaChat();
   var first=!loaded;loaded=true;
   if(nuevos.length){
     toast(nuevos.length===1?'Lead nuevo desde '+canalLabel(nuevos[0].canal)+': '+nuevos[0].nombre:pl(nuevos.length,'lead nuevo','leads nuevos')+' desde Chatwoot');

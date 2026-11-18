@@ -82,7 +82,7 @@ export async function loadState(user: User) {
   return {
     me: user,
     settings,
-    chatwoot: { configurado: cwConfig().ok },
+    chatwoot: { configurado: cwConfig().ok, panelUrl: cwConfig().panelUrl },
     leads: leads.map((r) => mapLead(r, gA.get(r.id) || [], gF.get(r.id) || [], gU.get(r.id))),
     tasks: tareas.map(mapTarea),
   };

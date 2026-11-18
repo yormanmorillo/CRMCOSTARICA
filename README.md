@@ -66,9 +66,11 @@ cp .env.example .env.local     # llena AUTH_SECRET, ADMIN_EMAIL y ADMIN_PASSWORD
 npm run dev                    # http://localhost:3000
 ```
 
+La pestaña **Conversaciones** (Chatwoot dentro de Pulso CRM) solo aparece si defines `CHATWOOT_PUBLIC_URL` y tu Chatwoot permite mostrarse dentro de otra página. En tu propio servidor la instalación lo deja configurado. Con Chatwoot en la nube (app.chatwoot.com) probablemente no lo permita y no puedes cambiarlo: ahí usa el botón de abrirlo en otra pestaña.
+
 Sin `DATABASE_URL` usa una base de datos embebida en la carpeta `.data` (solo para pruebas locales; en Vercel la variable es obligatoria).
 
-Prueba automática con un Chatwoot simulado (70 comprobaciones). Enciende el servidor con `npm run build` y `npx next start -p 3100`, con estas variables: `WEBHOOK_TOKEN=whtok`, `CHATWOOT_URL=http://localhost:4010`, `CHATWOOT_ACCOUNT_ID=1`, `CHATWOOT_API_TOKEN=tok`, `CHATWOOT_WEBHOOK_SECRET=secreto-de-prueba`, `ADMIN_EMAIL=admin@prueba.cr`, `ADMIN_PASSWORD=clave-segura-123`. Luego ejecuta `node scripts/test.mjs`.
+Prueba automática con un Chatwoot simulado (71 comprobaciones). Enciende el servidor con `npm run build` y `npx next start -p 3100`, con estas variables: `WEBHOOK_TOKEN=whtok`, `CHATWOOT_URL=http://localhost:4010`, `CHATWOOT_ACCOUNT_ID=1`, `CHATWOOT_API_TOKEN=tok`, `CHATWOOT_WEBHOOK_SECRET=secreto-de-prueba`, `CHATWOOT_PUBLIC_URL=https://chat.ejemplo.com`, `ADMIN_EMAIL=admin@prueba.cr`, `ADMIN_PASSWORD=clave-segura-123`. Luego ejecuta `node scripts/test.mjs`.
 
 ## Estructura
 

@@ -5,7 +5,11 @@ export function cwConfig() {
   const url = (process.env.CHATWOOT_URL || 'https://app.chatwoot.com').replace(/\/+$/, '');
   const account = (process.env.CHATWOOT_ACCOUNT_ID || '').trim();
   const token = (process.env.CHATWOOT_API_TOKEN || '').trim();
-  return { url, account, token, ok: !!(account && token) };
+  // Dirección pública del panel de Chatwoot, para mostrarlo dentro de Pulso CRM.
+  const pub = (process.env.CHATWOOT_PUBLIC_URL || '').trim().replace(/\/+$/, '');
+  const panelBase = /^https:\/\//.test(pub) ? pub : '';
+  const panelUrl = panelBase ? panelBase + (account ? `/app/accounts/${account}/dashboard` : '/app/') : '';
+  return { url, account, token, ok: !!(account && token), panelUrl };
 }
 
 /** Verifica la firma HMAC opcional que Chatwoot agrega a los webhooks (X-Chatwoot-Signature). */

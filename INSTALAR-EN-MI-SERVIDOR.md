@@ -66,7 +66,16 @@ Te pide el **número de cuenta** de Chatwoot (aparece en la dirección del naveg
 
 Al terminar te muestra una dirección larga. Cópiala y pégala en Chatwoot: **Ajustes, Integraciones, Webhooks, Agregar nuevo webhook**, marcando los eventos **"Conversación creada"** y **"Mensaje creado"**.
 
-## Paso 5. Probar
+## Paso 5. Ver Chatwoot dentro de Pulso CRM
+
+No tienes que hacer nada más: al terminar el Paso 4, en Pulso CRM aparece la pestaña **Conversaciones** (en el teléfono se llama **Chats**) con tu bandeja de Chatwoot adentro. El número rojo es la cantidad de mensajes de clientes que nadie ha respondido.
+
+- La primera vez te puede pedir entrar a Chatwoot dentro de la pestaña. Después se queda abierta.
+- Para que el inicio de sesión funcione dentro de la pestaña, usa **dos nombres del mismo dominio** (por ejemplo `crm.tuempresa.com` y `chat.tuempresa.com`).
+- Solo Pulso CRM puede mostrar tu Chatwoot dentro de su página: la instalación lo configura así a propósito, para que ningún otro sitio pueda hacerlo.
+- Si ves la pantalla en blanco, usa el botón **Abrir en una pestaña nueva**, que muestra el mismo Chatwoot aparte.
+
+## Paso 6. Probar
 
 Escríbele un mensaje a tu WhatsApp (o usa el chat de tu página). En unos segundos el lead aparece en `https://crm.tuempresa.com` y la conversación se ve dentro de su ficha, donde también puedes responder.
 
@@ -95,6 +104,7 @@ Si no aparece, entra a Pulso CRM, **Ajustes, "Últimos avisos recibidos"**: ahí
 - **La página no abre o dice que no es segura.** Casi siempre es el DNS: revisa que los dos nombres apunten a la IP del servidor y que los puertos 80 y 443 estén abiertos. Luego: `docker compose logs --tail 50 caddy`.
 - **El servidor se pone lento o se cae.** Probablemente se agotó la memoria. Revisa con `docker stats --no-stream`. Los ajustes de Chatwoot vienen reducidos para 4 GB; si tienes más memoria, puedes subirlos en `.env` (`CHATWOOT_WEB_CONCURRENCY`, `CHATWOOT_SIDEKIQ_CONCURRENCY`, ver `.env.servidor.example`) y ejecutar `docker compose up -d`.
 - **Los mensajes llegan a Chatwoot pero no crean leads.** Revisa que el webhook de Chatwoot tenga la dirección exacta del Paso 4 y los dos eventos marcados. Si en "Últimos avisos recibidos" no aparece nada, Chatwoot no está pudiendo llamar a Pulso CRM: algunos servidores no pueden conectarse a su propia IP pública desde dentro. Pídeme ayuda con la salida de `docker compose logs --tail 100 sidekiq`.
+- **La pestaña Conversaciones sale en blanco.** Abre Chatwoot en una pestaña nueva con el botón de arriba: si ahí funciona, el problema es el permiso de mostrarlo adentro. Revisa que `CRM_DOMAIN` y `CHAT_DOMAIN` en `.env` estén bien escritos y reinicia con `docker compose up -d`.
 - **No puedo responder desde Pulso CRM.** Revisa que hayas hecho el Paso 4 (cuenta y token). En WhatsApp solo se puede responder dentro de las 24 horas siguientes al último mensaje del cliente.
 - **Cambié algo en `.env`.** Aplica los cambios con `docker compose up -d`.
 

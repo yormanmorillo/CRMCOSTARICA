@@ -10,5 +10,9 @@
 
 {$CHAT_DOMAIN} {
 	encode gzip
-	reverse_proxy rails:3000
+	reverse_proxy rails:3000 {
+		# Permite que Pulso CRM (y solo él) muestre Chatwoot dentro de su pestaña "Conversaciones".
+		header_down -X-Frame-Options
+		header_down Content-Security-Policy "frame-ancestors 'self' https://{$CRM_DOMAIN}"
+	}
 }

@@ -57,6 +57,7 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?falta ADMIN_PASSWORD en .env}
       WEBHOOK_TOKEN: ${WEBHOOK_TOKEN:?falta WEBHOOK_TOKEN en .env}
       CHATWOOT_URL: http://rails:3000 # dentro del servidor se habla directo, sin salir a internet
+      CHATWOOT_PUBLIC_URL: https://${CHAT_DOMAIN} # para mostrar Chatwoot en la pestaña Conversaciones
       CHATWOOT_ACCOUNT_ID: ${CHATWOOT_ACCOUNT_ID:-}
       CHATWOOT_API_TOKEN: ${CHATWOOT_API_TOKEN:-}
       CHATWOOT_WEBHOOK_SECRET: ${CHATWOOT_WEBHOOK_SECRET:-}
