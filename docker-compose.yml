@@ -1,0 +1,128 @@
+# Pulso CRM + Chatwoot en un solo servidor.
+# Los datos viven en volúmenes de Docker. Las variables salen del archivo .env (lo crea scripts/instalar.sh).
+
+x-chatwoot-env: &chatwoot-env
+  NODE_ENV: production
+  RAILS_ENV: production
+  INSTALLATION_ENV: docker
+  SECRET_KEY_BASE: ${CHATWOOT_SECRET_KEY_BASE:?falta CHATWOOT_SECRET_KEY_BASE en .env}
+  FRONTEND_URL: https://${CHAT_DOMAIN:?falta CHAT_DOMAIN en .env}
+  FORCE_SSL: "false" # el HTTPS lo pone Caddy
+  ENABLE_ACCOUNT_SIGNUP: "false"
+  REDIS_URL: redis://redis:6379
+  REDIS_PASSWORD: ${REDIS_PASSWORD:?falta REDIS_PASSWORD en .env}
+  POSTGRES_HOST: postgres
+  POSTGRES_USERNAME: postgres
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD en .env}
+  POSTGRES_DATABASE: chatwoot_production
+  ACTIVE_STORAGE_SERVICE: local
+  RAILS_LOG_TO_STDOUT: "true"
+  LOG_LEVEL: info
+  # Ajustes pensados para un servidor de 4 GB. Súbelos si tienes más memoria.
+  RAILS_MAX_THREADS: ${CHATWOOT_RAILS_THREADS:-5}
+  WEB_CONCURRENCY: ${CHATWOOT_WEB_CONCURRENCY:-1}
+  SIDEKIQ_CONCURRENCY: ${CHATWOOT_SIDEKIQ_CONCURRENCY:-5}
+
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      CRM_DOMAIN: ${CRM_DOMAIN:?falta CRM_DOMAIN en .env}
+      CHAT_DOMAIN: ${CHAT_DOMAIN:?falta CHAT_DOMAIN en .env}
+      ACME_EMAIL: ${ADMIN_EMAIL:?falta ADMIN_EMAIL en .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - pulso
+      - rails
+
+  pulso:
+    build: .
+    image: pulso-crm:local
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://pulso:${PULSO_DB_PASSWORD:?falta PULSO_DB_PASSWORD en .env}@postgres:5432/pulso
+      AUTH_SECRET: ${AUTH_SECRET:?falta AUTH_SECRET en .env}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?falta ADMIN_PASSWORD en .env}
+      WEBHOOK_TOKEN: ${WEBHOOK_TOKEN:?falta WEBHOOK_TOKEN en .env}
+      CHATWOOT_URL: http://rails:3000 # dentro del servidor se habla directo, sin salir a internet
+      CHATWOOT_ACCOUNT_ID: ${CHATWOOT_ACCOUNT_ID:-}
+      CHATWOOT_API_TOKEN: ${CHATWOOT_API_TOKEN:-}
+      CHATWOOT_WEBHOOK_SECRET: ${CHATWOOT_WEBHOOK_SECRET:-}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/login').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  rails:
+    image: chatwoot/chatwoot:${CHATWOOT_TAG:-latest}
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment: *chatwoot-env
+    entrypoint: docker/entrypoints/rails.sh
+    command: ["bundle", "exec", "rails", "s", "-p", "3000", "-b", "0.0.0.0"]
+    volumes:
+      - storage_data:/app/storage
+
+  sidekiq:
+    image: chatwoot/chatwoot:${CHATWOOT_TAG:-latest}
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment: *chatwoot-env
+    command: ["bundle", "exec", "sidekiq", "-C", "config/sidekiq.yml"]
+    volumes:
+      - storage_data:/app/storage
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: always
+    environment:
+      POSTGRES_DB: chatwoot
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PULSO_DB_PASSWORD: ${PULSO_DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./servidor/postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:alpine
+    restart: always
+    command: ["sh", "-c", "redis-server --requirepass \"$$REDIS_PASSWORD\""]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+
+volumes:
+  storage_data:
+  postgres_data:
+  redis_data:
+  caddy_data:
+  caddy_config:

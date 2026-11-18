@@ -1,0 +1,14 @@
+# Caddy publica los dos sitios con HTTPS automático (certificados gratis de Let's Encrypt).
+{
+	email {$ACME_EMAIL}
+}
+
+{$CRM_DOMAIN} {
+	encode gzip
+	reverse_proxy pulso:3000
+}
+
+{$CHAT_DOMAIN} {
+	encode gzip
+	reverse_proxy rails:3000
+}

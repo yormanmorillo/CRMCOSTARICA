@@ -4,6 +4,8 @@ CRM de seguimiento de clientes. Cuando alguien escribe por WhatsApp, Instagram, 
 
 Incluye: leads con canal detectado automáticamente, filtro costarricense o extranjero, atenciones por día, tareas con calendario, imágenes adjuntas, recordatorios de llegada ("avisar 5 días antes"), panel con lo urgente, usuarios con contraseña y conversaciones.
 
+> **¿Prefieres instalarlo todo en tu propio servidor** (Chatwoot incluido, con HTTPS y base de datos)? Sigue la guía [INSTALAR-EN-MI-SERVIDOR.md](INSTALAR-EN-MI-SERVIDOR.md). Lo de abajo es para publicarlo en Vercel.
+
 ## Cómo funciona
 
 ```
