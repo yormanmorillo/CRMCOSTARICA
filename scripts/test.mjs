@@ -87,6 +87,14 @@ const msg = (o) => ({
   const lg = await call('POST', '/api/auth/login', { email: 'admin@prueba.cr', password: 'clave-segura-123' }, { nocookie: true });
   ok(lg.status === 200, 'el administrador entra');
   cookie = (lg.headers.get('set-cookie') || '').split(';')[0];
+  ok(lg.json.user.cambiarClave === true, 'con la contraseña inicial se exige cambiarla');
+  ok((await call('POST', '/api/leads', { nombre: 'Bloqueado por clave' })).status === 403, 'mientras no la cambie no puede modificar datos');
+  ok((await call('POST', '/api/auth/clave', { actual: 'clave-segura-123', nueva: 'clave-segura-123' })).status === 400, 'la nueva debe ser distinta a la actual');
+  ok((await call('POST', '/api/auth/clave', { actual: 'incorrecta', nueva: 'otra-clave-123' })).status === 400, 'la actual debe ser correcta');
+  const cl = await call('POST', '/api/auth/clave', { actual: 'clave-segura-123', nueva: 'clave-nueva-456' });
+  ok(cl.status === 200, 'cambia la contraseña inicial');
+  cookie = (cl.headers.get('set-cookie') || '').split(';')[0];
+  ok((await call('GET', '/api/state')).json.me.cambiarClave === false, 'después del cambio ya puede trabajar');
   ok((await call('GET', '/', undefined, { nocookie: true })).status === 302, 'la página principal redirige al login si no hay sesión');
   ok((await call('GET', '/')).text.includes('Pulso CRM'), 'la página principal carga con sesión');
   ok((await call('GET', '/login')).status === 302, 'el login redirige si ya hay sesión');
@@ -579,10 +587,10 @@ const msg = (o) => ({
     ok((await call('POST', '/api/usuarios', { nombre: 'X', email: 'x@prueba.cr', password: 'clave-xxx-123', rol: 'no-existe' })).status === 400, 'un rol inexistente se rechaza');
     ok((await call('DELETE', `/api/roles/${rid.id}`)).status === 409, 'no se borra un rol con usuarios');
     const uid2 = mu.json.usuario.id;
-    ok((await call('PATCH', `/api/usuarios/${uid2}`, { pin: '12' })).status === 400, 'el PIN debe tener 4 a 6 números');
-    ok((await call('PATCH', `/api/usuarios/${uid2}`, { pin: '4821' })).status === 200, 'se asigna un PIN');
+    ok((await call('PATCH', `/api/usuarios/${uid2}`, { pin: '12' })).status === 400, 'el PIN debe tener 6 números');
+    ok((await call('PATCH', `/api/usuarios/${uid2}`, { pin: '482193' })).status === 200, 'se asigna un PIN');
     ok((await call('GET', '/api/auth/opciones', undefined, { nocookie: true })).json.pin === true, 'la entrada con PIN está activa por defecto');
-    const lp = await call('POST', '/api/auth/pin', { email: 'rita@prueba.cr', pin: '4821' }, { nocookie: true });
+    const lp = await call('POST', '/api/auth/pin', { email: 'rita@prueba.cr', pin: '482193' }, { nocookie: true });
     ok(lp.status === 200 && /pulso_session/.test(lp.headers.get('set-cookie') || ''), 'entra con correo y PIN');
     const ckR = (lp.headers.get('set-cookie') || '').split(';')[0];
     const stR = await call('GET', '/api/state', undefined, { nocookie: true, headers: { cookie: ckR } });
@@ -595,10 +603,10 @@ const msg = (o) => ({
     await new Promise((r) => setTimeout(r, 15500));
     const st2 = await call('GET', '/api/state', undefined, { nocookie: true, headers: { cookie: ckR } });
     ok(st2.json.me.permisos.includes('ver_todos') && st2.json.leads.length >= stR.json.leads.length, 'los permisos nuevos se aplican en segundos, sin volver a entrar');
-    for (let i = 0; i < 5; i++) await call('POST', '/api/auth/pin', { email: 'rita@prueba.cr', pin: '0000' }, { nocookie: true });
-    ok((await call('POST', '/api/auth/pin', { email: 'rita@prueba.cr', pin: '4821' }, { nocookie: true })).status === 401, '5 PIN erróneos bloquean la cuenta 15 minutos');
-    ok((await call('POST', '/api/auth/pin', { email: 'admin@prueba.cr', pin: '1234' }, { nocookie: true })).status === 401, 'los administradores no entran con PIN');
-    ok((await call('PATCH', '/api/ajustes', { pinActivo: false })).status === 200 && (await call('POST', '/api/auth/pin', { email: 'rita@prueba.cr', pin: '4821' }, { nocookie: true })).status === 403, 'se puede apagar la entrada con PIN');
+    for (let i = 0; i < 5; i++) await call('POST', '/api/auth/pin', { email: 'rita@prueba.cr', pin: '000000' }, { nocookie: true });
+    ok((await call('POST', '/api/auth/pin', { email: 'rita@prueba.cr', pin: '482193' }, { nocookie: true })).status === 401, '5 PIN erróneos bloquean la cuenta 15 minutos');
+    ok((await call('POST', '/api/auth/pin', { email: 'admin@prueba.cr', pin: '123456' }, { nocookie: true })).status === 401, 'los administradores no entran con PIN');
+    ok((await call('PATCH', '/api/ajustes', { pinActivo: false })).status === 200 && (await call('POST', '/api/auth/pin', { email: 'rita@prueba.cr', pin: '482193' }, { nocookie: true })).status === 403, 'se puede apagar la entrada con PIN');
     await call('PATCH', '/api/ajustes', { pinActivo: true });
     const hz = await call('PATCH', '/api/ajustes', { horario: [0, 1, 2, 3, 4, 5, 6].map((d) => ({ on: d >= 1 && d <= 5, desde: '08:00', hasta: '17:00' })) });
     ok(hz.status === 200 && hz.json.settings.horario[1].on && !hz.json.settings.horario[0].on, 'se guarda el horario de atención');
@@ -630,6 +638,45 @@ const msg = (o) => ({
     const mv = await call('PATCH', `/api/leads/${lp.id}`, { etapa: ep.json.etapas.find((e) => e.nombre === 'En pausa').clave });
     ok(mv.status === 200 && mv.json.lead.etapa === 'en-pausa', 'un lead se puede mover a En pausa');
     await call('DELETE', `/api/etapas/en-pausa`);
+  }
+  {
+    console.log('Seguridad');
+    const cc = async (email, password, ip) => call('POST', '/api/auth/login', { email, password }, { nocookie: true, headers: { 'x-forwarded-for': ip } });
+    // límite de intentos por correo
+    for (let i = 0; i < 8; i++) await cc('nadie@prueba.cr', 'mala-clave-x', '10.9.9.1');
+    ok((await cc('nadie@prueba.cr', 'mala-clave-x', '10.9.9.2')).status === 429, 'tras 8 fallos con un correo, se bloquea aunque cambie la IP');
+    ok((await cc('admin@prueba.cr', 'clave-nueva-456', '10.9.9.3')).status === 200, 'el bloqueo de un correo no afecta a los demás');
+    // la IP falsificada al inicio no sirve para esquivar: cuenta la última
+    for (let i = 0; i < 30; i++) await call('POST', '/api/auth/login', { email: 'u' + i + '@prueba.cr', password: 'x' }, { nocookie: true, headers: { 'x-forwarded-for': 'falsa' + i + ', 10.9.9.50' } });
+    ok((await call('POST', '/api/auth/login', { email: 'otro@prueba.cr', password: 'x' }, { nocookie: true, headers: { 'x-forwarded-for': 'otra, 10.9.9.50' } })).status === 429, 'el límite por IP usa la IP del proxy, no la que escribe el cliente');
+    // sesión cancelable: al cambiar el rol o eliminar, la sesión vieja deja de servir
+    const mk2 = await call('POST', '/api/usuarios', { email: 'temporal@prueba.cr', nombre: 'Temporal', password: 'clave-temporal-1', rol: 'vendedor' });
+    const lt = await call('POST', '/api/auth/login', { email: 'temporal@prueba.cr', password: 'clave-temporal-1' }, { nocookie: true, headers: { 'x-forwarded-for': '10.9.9.4' } });
+    const ct = (lt.headers.get('set-cookie') || '').split(';')[0];
+    ok((await call('GET', '/api/state', undefined, { nocookie: true, headers: { cookie: ct } })).status === 200, 'sesión válida al inicio');
+    await call('PATCH', `/api/usuarios/${mk2.json.usuario.id}`, { password: 'otra-clave-nueva-2' });
+    ok((await call('GET', '/api/state', undefined, { nocookie: true, headers: { cookie: ct } })).status === 401, 'al cambiarle la contraseña se cierran sus sesiones');
+    const lt2 = await call('POST', '/api/auth/login', { email: 'temporal@prueba.cr', password: 'otra-clave-nueva-2' }, { nocookie: true, headers: { 'x-forwarded-for': '10.9.9.4' } });
+    const ct2 = (lt2.headers.get('set-cookie') || '').split(';')[0];
+    await call('DELETE', `/api/usuarios/${mk2.json.usuario.id}`);
+    ok((await call('GET', '/api/state', undefined, { nocookie: true, headers: { cookie: ct2 } })).status === 401, 'un usuario eliminado pierde la sesión enseguida');
+    // contraseña inicial del administrador: obliga a cambiarla
+    // archivos: un vendedor no abre adjuntos de leads ajenos
+  }
+  {
+    console.log('Adjuntos y visibilidad');
+    await call('POST', '/api/roles', { nombre: 'Solo propios', permisos: [] });
+    const rid = (await call('GET', '/api/roles')).json.roles.find((r) => r.nombre === 'Solo propios').id;
+    await call('POST', '/api/usuarios', { email: 'propio@prueba.cr', nombre: 'Propio', password: 'clave-propio-12', rol: rid });
+    const lp = await call('POST', '/api/auth/login', { email: 'propio@prueba.cr', password: 'clave-propio-12' }, { nocookie: true, headers: { 'x-forwarded-for': '10.9.9.6' } });
+    const cp = (lp.headers.get('set-cookie') || '').split(';')[0];
+    const lead = (await call('POST', '/api/leads', { nombre: 'Lead privado del admin', canal: 'web' })).json.lead;
+    const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+    const ar = await call('POST', `/api/leads/${lead.id}/archivos`, { nombre: 'a.png', data: png });
+    const r1 = await fetch(BASE + `/api/archivos/${ar.json.archivo.id}`, { headers: { cookie: cp } });
+    ok(r1.status === 404, 'quien no puede ver el lead tampoco abre sus archivos');
+    const r2 = await fetch(BASE + `/api/archivos/${ar.json.archivo.id}`, { headers: { cookie } });
+    ok(r2.status === 200 && r2.headers.get('x-content-type-options') === 'nosniff', 'el dueño sí, con protección nosniff');
   }
   {
     console.log('Ayuda (tickets)');

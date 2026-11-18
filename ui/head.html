@@ -362,7 +362,14 @@ footer{margin-top:28px;color:var(--muted);font-size:12px}
 /* Etapas, tarjetas del tablero y ficha ampliada */
 .col{border-top:3px solid var(--c,var(--line))}
 .col h3 .sum{display:block;font-size:11px;font-weight:500;color:var(--muted);margin-top:1px}
-.col h3 .cnt{color:var(--muted);font-weight:500}
+.col h3 .cnt{color:var(--muted);font-weight:600;margin-left:auto;font-size:12px;background:var(--surface);border-radius:99px;padding:1px 8px}
+.col{border-top:4px solid var(--c,var(--line))}
+.col h3{flex-wrap:wrap;gap:4px 8px;padding:4px 2px 8px}
+.col h3 .etq{display:inline-flex;align-items:center;gap:7px;font-size:13.5px;font-weight:700;color:var(--c);background:color-mix(in srgb,var(--c) 17%,var(--surface));border:1.5px solid color-mix(in srgb,var(--c) 55%,transparent);border-radius:99px;padding:4px 12px 4px 10px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.col h3 .etq i,.st i{width:8px;height:8px;border-radius:50%;background:var(--c);flex:none}
+.col h3 .sum{flex-basis:100%}
+.col .kc{border-left:4px solid var(--c,var(--line))}
+.st{align-items:center;gap:6px;border:1px solid color-mix(in srgb,var(--c) 45%,transparent);font-weight:700}
 .kc.star{border-color:var(--warn)}
 .kc .top{display:flex;gap:6px;justify-content:space-between;align-items:flex-start}
 .kc .top b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

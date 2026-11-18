@@ -3,6 +3,7 @@
 <title>Entrar | Pulso CRM</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@600;700&display=swap">
 <style>
+[hidden]{display:none!important}
 :root{color-scheme:light;--bg:#f1f6f9;--surface:#fff;--fg:#0e2230;--muted:#53697a;--line:#d3e1e9;--accent:#0a7c98;--accent-fg:#fff;--crit:#b3261e;--crit-soft:#fbdcd8}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#08141d;--surface:#0f2230;--fg:#e3eef5;--muted:#8fa8b8;--line:#23404f;--accent:#4cc3e0;--accent-fg:#04202a;--crit:#ff8f85;--crit-soft:#401b18;color-scheme:dark}}
 *{box-sizing:border-box}
@@ -30,7 +31,7 @@ form{display:flex;flex-direction:column;gap:14px}
   <form id="f">
     <label>Correo<input id="email" name="email" type="email" required autocomplete="username" autofocus></label>
     <label id="lpw">Contraseña<input id="password" name="password" type="password" autocomplete="current-password"></label>
-    <label id="lpin" hidden>PIN<input id="pin" name="pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" placeholder="4 a 6 números"></label>
+    <label id="lpin" hidden>PIN<input id="pin" name="pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" placeholder="6 números"></label>
     <div class="err" id="err" role="alert" hidden></div>
     <button type="submit" id="go">Entrar</button>
   </form>

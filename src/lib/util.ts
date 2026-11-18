@@ -44,3 +44,27 @@ export const toDate = (v: any): Date => {
   const d = new Date(v);
   return isNaN(d.getTime()) ? new Date() : d;
 };
+
+/** IP real del cliente: la que agregó el último proxy (la primera se puede falsificar). */
+export function ipDe(req: Request) {
+  const x = (req.headers.get('x-forwarded-for') || '').split(',').map((s) => s.trim()).filter(Boolean);
+  return x[x.length - 1] || req.headers.get('x-real-ip') || 'local';
+}
+
+/** Contador sencillo de intentos fallidos (en memoria): sirve para frenar adivinar contraseñas. */
+const GF = globalThis as any;
+const fallos: Map<string, number[]> = (GF.__pulsoFallos ||= new Map());
+const VENTANA = 15 * 60000;
+const vivos = (k: string) => {
+  const l = (fallos.get(k) || []).filter((x) => Date.now() - x < VENTANA);
+  l.length ? fallos.set(k, l) : fallos.delete(k);
+  return l;
+};
+export const bloqueado = (k: string, max: number) => vivos(k).length >= max;
+export function anotarFallo(k: string) {
+  const l = vivos(k);
+  l.push(Date.now());
+  fallos.set(k, l);
+  if (fallos.size > 20000) fallos.clear();
+}
+export const limpiarFallos = (k: string) => void fallos.delete(k);

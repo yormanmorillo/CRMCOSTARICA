@@ -102,6 +102,8 @@ insert into roles(id, nombre, permisos, sistema) values
 alter table usuarios add column if not exists pin_hash text;
 alter table usuarios add column if not exists pin_fallos int not null default 0;
 alter table usuarios add column if not exists pin_hasta timestamptz;
+alter table usuarios add column if not exists sesion int not null default 0;
+alter table usuarios add column if not exists cambiar_clave boolean not null default false;
 alter table mensajes add column if not exists asunto text not null default '';
 alter table mensajes add column if not exists canal text not null default '';
 create unique index if not exists mensajes_meta_uidx on mensajes (meta_id) where meta_id is not null;

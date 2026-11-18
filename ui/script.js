@@ -95,7 +95,7 @@ function waHref(l){
 var leadSub=function(l){return l.tipo==='cr'?('Costarricense'+(l.provincia?' · '+l.provincia:'')):('Extranjero'+(l.pais?' · '+l.pais:''))};
 var canalChip=function(c){return '<span class="chip ch-'+esc(c)+'"><i></i>'+esc(canalLabel(c))+'</span>'};
 var tipoTag=function(l){return '<span class="tag">'+esc(l.tipo==='cr'?'Costarricense':('Extranjero'+(l.pais?' · '+l.pais:'')))+'</span>'};
-var etapaChip=function(e){return '<span class="st" style="--c:'+colorE(e)+'">'+esc(etapaLabel(e))+'</span>'};
+var etapaChip=function(e){return '<span class="st" style="--c:'+colorE(e)+'"><i></i>'+esc(etapaLabel(e))+'</span>'};
 var tagsHtml=function(l,n){return (l.etiquetas||[]).slice(0,n||99).map(function(t){return '<span class="tagp">'+esc(t)+'</span>'}).join('')};
 var lastAtt=function(l){var f=l.atenciones.map(function(a){return a.fecha}).sort();return f.length?f[f.length-1]:''};
 var autoTag=function(l){return l.auto?'<span class="tag" title="Se creó sola cuando el cliente escribió">Automático</span>':''};
@@ -243,7 +243,7 @@ function renderLeads(){
     box.innerHTML='<div class="board">'+ETAPAS.map(function(e){
       var items=list.filter(function(l){return l.etapa===e.clave});
       var v=money(sumValor(items));
-      return '<div class="col" data-stage="'+esc(e.clave)+'" style="--c:var(--'+esc(e.color)+')"><h3><span>'+esc(e.nombre)+' <span class="cnt">'+items.length+'</span>'+(v?'<span class="sum">'+esc(v)+'</span>':'')+'</span></h3>'+items.map(kcard).join('')+'</div>';
+      return '<div class="col" data-stage="'+esc(e.clave)+'" style="--c:var(--'+esc(e.color)+')"><h3><span class="etq"><i></i>'+esc(e.nombre)+'</span><span class="cnt">'+items.length+'</span>'+(v?'<span class="sum">'+esc(v)+'</span>':'')+'</h3>'+items.map(kcard).join('')+'</div>';
     }).join('')+'</div>';
   }
 }
@@ -880,6 +880,12 @@ document.addEventListener('submit',function(e){
   var fd=new FormData(f),g=function(k){return String(fd.get(k)||'').trim()};
   var btn=f.querySelector('button[type="submit"]');if(btn)btn.disabled=true;
   var done=function(){if(btn)btn.disabled=false};
+  if(kind==='clave'){
+    var er=$('#claveErr');
+    if(g('nueva')!==g('nueva2')){er.textContent='Las dos contraseñas nuevas no coinciden.';er.hidden=false;done();return}
+    api('POST','/auth/clave',{actual:fd.get('actual'),nueva:fd.get('nueva')}).then(function(){var o=document.getElementById('claveOv');if(o)o.remove();S.me.cambiarClave=false;toast('Contraseña actualizada')}).catch(function(e){er.textContent=e.message;er.hidden=false}).then(done);
+    return;
+  }
   if(kind==='ticket'){window.ayudaEnviar(g,f,done);return}
   if(kind==='new'){
     api('POST','/leads',{nombre:g('nombre'),tel:g('tel'),email:g('email'),canal:g('canal'),tipo:g('tipo')||'cr',cedula:g('cedula'),provincia:g('provincia'),pais:g('pais'),pasaporte:g('pasaporte'),empresa:g('empresa'),interes:g('interes'),llegada:g('llegada'),avisoDias:g('avisoDias')})
@@ -964,6 +970,16 @@ document.addEventListener('drop',function(e){
 window.addEventListener('hashchange',function(){setView(location.hash.slice(1))});
 
 /* ---------- Carga y actualización automática ---------- */
+function pedirCambioClave(){
+  if(document.getElementById('claveOv'))return;
+  var d=document.createElement('div');d.id='claveOv';d.className='ov center';d.style.zIndex=200;
+  d.innerHTML='<form class="modal" data-form="clave" style="max-width:420px"><h2>Cambia tu contraseña</h2><p class="sub">Por seguridad, antes de seguir debes reemplazar la contraseña inicial por una propia (mínimo 8 caracteres).</p>'+
+   '<label class="fl">Contraseña actual<input class="in" type="password" name="actual" required autocomplete="current-password"></label>'+
+   '<label class="fl">Contraseña nueva<input class="in" type="password" name="nueva" minlength="8" required autocomplete="new-password"></label>'+
+   '<label class="fl">Repite la nueva<input class="in" type="password" name="nueva2" minlength="8" required autocomplete="new-password"></label>'+
+   '<p class="sub" id="claveErr" style="color:var(--crit)" hidden></p><button class="btn primary" type="submit">Guardar contraseña</button></form>';
+  document.body.appendChild(d);
+}
 function applyState(st,quiet){
   var known={};S.leads.forEach(function(l){known[l.id]=1});
   var nuevos=loaded&&quiet?st.leads.filter(function(l){return !known[l.id]&&l.auto}):[];
@@ -972,6 +988,7 @@ function applyState(st,quiet){
   sig=s;
   S=st;ETAPAS=st.etapas||[];
   applyBrand();fillFilters();renderLic();
+  if(S.me&&S.me.cambiarClave)pedirCambioClave();
   ajustarPestanaChat();
   var first=!loaded;loaded=true;
   if(nuevos.length){

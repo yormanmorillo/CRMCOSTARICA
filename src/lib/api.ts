@@ -1,11 +1,11 @@
 import { q } from './db';
-import { HttpError, json, uid, hoyCR, isDate, str, clamp, safeEqual } from './util';
-import { login, loginPin, sessionCookie, clearCookie, hashPassword, checkPassword, PERMISOS, limpiarCacheRoles } from './auth';
+import { HttpError, json, uid, hoyCR, isDate, str, clamp, safeEqual, ipDe, bloqueado, anotarFallo, limpiarFallos } from './util';
+import { login, loginPin, sessionCookie, clearCookie, hashPassword, checkPassword, PERMISOS, limpiarCacheRoles, limpiarCacheUsuarios, cerrarSesiones } from './auth';
 import { loadState, loadLead, getSettings, setSetting, mapTarea, getEtapas, logAct, canalActivo, getAjuste, leerHorario, dentroDeHorario, siguienteEtapa, ETAPA_INICIAL_SQL, CANALES, TIPOS } from './leads';
 import { cwConfig, enviarMensaje, verifySignature } from './chatwoot';
 import { procesarEvento, registrarRespuesta } from './webhook';
 import { esDemoId, enviarWhatsApp, enviarSocial, fbConfig, probarWhatsApp, procesarMeta, verifyMetaSignature, ventanaWhatsApp, waConfig } from './meta';
-import { route, body, oneOf, mustLead } from './router';
+import { route, body, oneOf, mustLead, puedeVerLead } from './router';
 import { estadoLicencia } from './licencia';
 import { limpiezaAutomatica } from './almacen';
 import { enviarCorreo, esDemoCorreo, leerCfg, listo, revisionAutomatica, iniciarRevision } from './correo';
@@ -19,10 +19,24 @@ import './api-ayuda';
 export { dispatch } from './router';
 
 /* ---------- Sesión ---------- */
+/** Frena el adivinar contraseñas: máximo de fallos por correo y por IP en 15 minutos. */
+async function conLimite(req: Request, email: string, fn: () => Promise<any>) {
+  const kIp = 'ip:' + ipDe(req);
+  const kEm = 'em:' + email.trim().toLowerCase();
+  if (bloqueado(kIp, 30) || bloqueado(kEm, 8)) throw new HttpError(429, 'Demasiados intentos. Espera unos minutos e intenta de nuevo.');
+  try {
+    const user = await fn();
+    limpiarFallos(kEm);
+    return json({ ok: true, user: { id: user.id, email: user.email, nombre: user.nombre, rol: user.rol, permisos: user.permisos, cambiarClave: user.cambiarClave } }, 200, { 'set-cookie': await sessionCookie(user, req) });
+  } catch (e: any) {
+    if (e instanceof HttpError && e.status === 401) { anotarFallo(kIp); anotarFallo(kEm); }
+    throw e;
+  }
+}
+
 route('POST', '/auth/login', async ({ req }) => {
   const b = await body(req);
-  const user = await login(String(b.email || ''), String(b.password || ''));
-  return json({ ok: true, user }, 200, { 'set-cookie': await sessionCookie(user, req) });
+  return conLimite(req, String(b.email || ''), () => login(String(b.email || ''), String(b.password || '')));
 }, { public: true });
 
 route('GET', '/auth/opciones', async () => json({ pin: (await getAjuste('pinActivo')) !== '0' }), { public: true });
@@ -30,9 +44,22 @@ route('GET', '/auth/opciones', async () => json({ pin: (await getAjuste('pinActi
 route('POST', '/auth/pin', async ({ req }) => {
   if ((await getAjuste('pinActivo')) === '0') throw new HttpError(403, 'La entrada con PIN está desactivada.');
   const b = await body(req);
-  const user = await loginPin(String(b.email || ''), String(b.pin || ''));
-  return json({ ok: true, user }, 200, { 'set-cookie': await sessionCookie(user, req) });
+  return conLimite(req, 'pin:' + String(b.email || ''), () => loginPin(String(b.email || ''), String(b.pin || '')));
 }, { public: true });
+
+route('POST', '/auth/clave', async ({ req, user }) => {
+  const b = await body(req);
+  const nueva = String(b.nueva || '');
+  const r = (await q('select hash from usuarios where id=$1', [user!.id]))[0];
+  if (!r || !checkPassword(String(b.actual || ''), r.hash)) throw new HttpError(400, 'La contraseña actual no es correcta.');
+  if (nueva.length < 8) throw new HttpError(400, 'La nueva contraseña debe tener al menos 8 caracteres.');
+  if (nueva === String(b.actual)) throw new HttpError(400, 'La nueva contraseña debe ser distinta a la actual.');
+  await q('update usuarios set hash=$2, cambiar_clave=false, sesion=sesion+1 where id=$1', [user!.id, hashPassword(nueva)]);
+  limpiarCacheUsuarios();
+  const fresco = (await q('select * from usuarios where id=$1', [user!.id]))[0];
+  const u2 = { ...user!, sesion: fresco.sesion, cambiarClave: false };
+  return json({ ok: true }, 200, { 'set-cookie': await sessionCookie(u2, req) });
+}, { libre: true });
 
 route('POST', '/auth/logout', async ({ req }) => json({ ok: true }, 200, { 'set-cookie': clearCookie(req) }), { public: true });
 
@@ -226,12 +253,12 @@ route('POST', '/leads/:id/archivos', async ({ req, params }) => {
   return json({ archivo: { id, nombre } }, 201);
 });
 
-route('GET', '/archivos/:id', async ({ params }) => {
-  const r = (await q('select data from archivos where id=$1', [params.id]))[0];
-  if (!r) throw new HttpError(404, 'Archivo no encontrado');
+route('GET', '/archivos/:id', async ({ params, user }) => {
+  const r = (await q('select data, lead_id from archivos where id=$1', [params.id]))[0];
+  if (!r || !(await puedeVerLead(user!, r.lead_id))) throw new HttpError(404, 'Archivo no encontrado');
   const m = /^data:(image\/[a-z]+);base64,(.*)$/.exec(r.data);
   if (!m) throw new HttpError(500, 'Archivo dañado');
-  return new Response(Buffer.from(m[2], 'base64'), { headers: { 'content-type': m[1], 'cache-control': 'private, max-age=86400' } });
+  return new Response(Buffer.from(m[2], 'base64'), { headers: { 'content-type': m[1], 'x-content-type-options': 'nosniff', 'content-security-policy': 'sandbox', 'cache-control': 'private, max-age=86400' } });
 });
 
 route('DELETE', '/archivos/:id', async ({ params }) => {
@@ -337,9 +364,9 @@ route('POST', '/leads/:id/mensajes', async ({ req, params, user }) => {
 /* ---------- Archivos que mandan los clientes por WhatsApp ---------- */
 const MIME_VISIBLE = /^(image\/(jpeg|png|webp|gif)|audio\/(ogg|mpeg|mp4|aac|amr)|video\/(mp4|3gpp)|application\/pdf)$/;
 
-route('GET', '/medios/:id', async ({ params }) => {
-  const r = (await q('select mime, nombre, data from medios where id=$1', [params.id]))[0];
-  if (!r) throw new HttpError(404, 'Archivo no encontrado');
+route('GET', '/medios/:id', async ({ params, user }) => {
+  const r = (await q('select mime, nombre, data, lead_id from medios where id=$1', [params.id]))[0];
+  if (!r || !(await puedeVerLead(user!, r.lead_id))) throw new HttpError(404, 'Archivo no encontrado');
   const visible = MIME_VISIBLE.test(r.mime);
   const nombre = String(r.nombre || 'archivo').replace(/[^\w.\- ]/g, '_');
   return new Response(Buffer.from(r.data, 'base64'), {
@@ -482,7 +509,7 @@ route('PATCH', '/usuarios/:id', async ({ req, params, user }) => {
     const pin = String(b.pin ?? '').trim();
     if (pin === '') set('pin_hash', null);
     else {
-      if (!/^\d{4,6}$/.test(pin)) throw new HttpError(400, 'El PIN son entre 4 y 6 números.');
+      if (!/^\d{6}$/.test(pin)) throw new HttpError(400, 'El PIN son 6 números.');
       const rolFinal = 'rol' in b ? await rolValido(b.rol) : cur.rol;
       if (rolFinal === 'admin') throw new HttpError(409, 'Los administradores entran solo con contraseña. Usa PIN con los demás roles.');
       set('pin_hash', hashPassword(pin));
@@ -498,7 +525,9 @@ route('PATCH', '/usuarios/:id', async ({ req, params, user }) => {
     vals.push(params.id);
     await q(`update usuarios set ${cols.join(', ')} where id=$${vals.length}`, vals);
   }
-  void user;
+  // Cambió la contraseña o el rol: se cierran sus sesiones abiertas (salvo la de quien hace el cambio).
+  if (b.password || ('rol' in b && b.rol !== cur.rol)) { if (params.id !== user!.id) await cerrarSesiones(params.id); }
+  limpiarCacheUsuarios();
   return json({ usuario: (await q('select id, email, nombre, rol, (pin_hash is not null) as tiene_pin from usuarios where id=$1', [params.id]))[0] });
 }, { admin: true });
 
@@ -512,6 +541,7 @@ route('DELETE', '/usuarios/:id', async ({ params, user }) => {
   }
   await q('update leads set asignado=null where asignado=$1', [params.id]);
   await q('delete from usuarios where id=$1', [params.id]);
+  limpiarCacheUsuarios();
   return json({ ok: true });
 }, { admin: true });
 

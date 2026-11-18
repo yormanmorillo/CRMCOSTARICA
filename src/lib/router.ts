@@ -46,6 +46,13 @@ function checkOrigin(req: Request) {
   if (oh !== host) throw new HttpError(403, 'Origen no permitido');
 }
 
+/** ¿Puede este usuario ver el lead? Sin «ver todos» solo ve los propios y los sin asignar. */
+export async function puedeVerLead(user: User, leadId: string) {
+  if (user.rol === 'admin' || user.permisos.includes('ver_todos')) return true;
+  const l = (await q('select asignado from leads where id=$1', [leadId]))[0];
+  return !l || !l.asignado || l.asignado === user.id;
+}
+
 export async function dispatch(req: Request, segs: string[]): Promise<Response> {
   try {
     const url = new URL(req.url);
@@ -63,6 +70,7 @@ export async function dispatch(req: Request, segs: string[]): Promise<Response> 
         if (!user) throw new HttpError(401, 'Tu sesión venció. Entra de nuevo.');
         if (r.admin && user.rol !== 'admin') throw new HttpError(403, 'Solo el administrador puede hacer esto');
         if (r.perm && user.rol !== 'admin' && !user.permisos.includes(r.perm)) throw new HttpError(403, 'Tu rol no tiene permiso para esto');
+        if (user.cambiarClave && !path.startsWith('/auth/') && method !== 'GET') throw new HttpError(403, 'Debes cambiar tu contraseña antes de continuar.');
         // Sin «ver todos los leads» solo se puede abrir un lead propio o sin asignar.
         const ml = /^\/leads\/([^/]+)/.exec(path);
         if (ml && user.rol !== 'admin' && !user.permisos.includes('ver_todos')) {

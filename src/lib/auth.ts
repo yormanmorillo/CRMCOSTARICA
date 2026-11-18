@@ -3,7 +3,7 @@ import { scryptSync, randomBytes, timingSafeEqual } from 'node:crypto';
 import { q } from './db';
 import { HttpError, uid } from './util';
 
-export type User = { id: string; email: string; nombre: string; rol: string; permisos: string[] };
+export type User = { id: string; email: string; nombre: string; rol: string; permisos: string[]; sesion: number; cambiarClave: boolean };
 
 export const PERMISOS: [string, string][] = [
   ['ver_todos', 'Ver todos los leads (si no, solo los suyos y los sin asignar)'],
@@ -24,6 +24,19 @@ export async function permisosDe(rol: string): Promise<string[]> {
 }
 
 const COOKIE = 'pulso_session';
+
+async function armar(r: any): Promise<User> {
+  return { id: r.id, email: r.email, nombre: r.nombre, rol: r.rol, permisos: await permisosDe(r.rol), sesion: r.sesion || 0, cambiarClave: !!r.cambiar_clave };
+}
+
+// Los datos del usuario se leen de la base (cada 5 segundos como máximo) para que un despido o un cambio de rol surta efecto enseguida.
+let cacheUsuarios = new Map<string, { t: number; r: any }>();
+export const limpiarCacheUsuarios = () => (cacheUsuarios = new Map());
+/** Cierra todas las sesiones abiertas de un usuario. */
+export async function cerrarSesiones(id: string) {
+  await q('update usuarios set sesion = sesion + 1 where id=$1', [id]);
+  limpiarCacheUsuarios();
+}
 
 const key = () => {
   const s = process.env.AUTH_SECRET || '';
@@ -59,7 +72,13 @@ export async function login(email: string, password: string): Promise<User> {
     await new Promise((res) => setTimeout(res, 400));
     throw new HttpError(401, 'Correo o contraseña incorrectos');
   }
-  return { id: r.id, email: r.email, nombre: r.nombre, rol: r.rol, permisos: await permisosDe(r.rol) };
+  // Si el administrador sigue con la contraseña inicial de la instalación, se le obliga a cambiarla.
+  const inicial = process.env.ADMIN_PASSWORD;
+  if (r.rol === 'admin' && inicial && password === inicial && !r.cambiar_clave) {
+    await q('update usuarios set cambiar_clave=true where id=$1', [r.id]);
+    r.cambiar_clave = true;
+  }
+  return await armar(r);
 }
 
 /** Entrada rápida con correo y PIN (4 a 6 números). Los administradores no pueden usarla. 5 intentos fallidos bloquean 15 minutos. */
@@ -78,7 +97,7 @@ export async function loginPin(email: string, pin: string): Promise<User> {
     return malo();
   }
   await q('update usuarios set pin_fallos=0, pin_hasta=null where id=$1', [r.id]);
-  return { id: r.id, email: r.email, nombre: r.nombre, rol: r.rol, permisos: await permisosDe(r.rol) };
+  return await armar(r);
 }
 
 const secure = (req: Request) =>
@@ -88,6 +107,7 @@ export async function sessionCookie(u: User, req: Request) {
   const jwt = await new SignJWT({ email: u.email, nombre: u.nombre, rol: u.rol })
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject(u.id)
+    .setJti(String(u.sesion))
     .setIssuedAt()
     .setExpirationTime('7d')
     .sign(key());
@@ -102,8 +122,15 @@ export async function getUser(req: Request): Promise<User | null> {
   if (!m) return null;
   try {
     const { payload } = await jwtVerify(m[1], key());
-    const rol = String(payload.rol || 'vendedor');
-    return { id: String(payload.sub), email: String(payload.email), nombre: String(payload.nombre), rol, permisos: await permisosDe(rol) };
+    const id = String(payload.sub);
+    let c = cacheUsuarios.get(id);
+    if (!c || Date.now() - c.t > 5000) {
+      c = { t: Date.now(), r: (await q('select id, email, nombre, rol, sesion, cambiar_clave from usuarios where id=$1', [id]))[0] || null };
+      cacheUsuarios.set(id, c);
+      if (cacheUsuarios.size > 2000) cacheUsuarios = new Map();
+    }
+    if (!c.r || String(c.r.sesion || 0) !== String(payload.jti ?? '0')) return null;
+    return await armar(c.r);
   } catch {
     return null;
   }

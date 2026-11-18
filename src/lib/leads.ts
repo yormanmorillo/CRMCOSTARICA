@@ -191,7 +191,7 @@ export async function loadState(user: User) {
   const nombres = new Map<string, string>(usuarios.map((u) => [u.id, u.nombre]));
   const mots = new Map<string, string>(motivos.map((m) => [m.id, m.nombre]));
   return {
-    me: user,
+    me: { id: user.id, email: user.email, nombre: user.nombre, rol: user.rol, permisos: user.permisos, cambiarClave: user.cambiarClave },
     settings,
     etapas,
     motivos: motivos.filter((m) => m.activo),

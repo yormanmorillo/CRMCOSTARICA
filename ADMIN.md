@@ -101,3 +101,12 @@ Menú **Ayuda**: cualquier usuario crea un ticket (título, módulo, prioridad, 
 Botón **Simulador** en el menú (solo admin) abre `/demo` para mostrar a un cliente cómo entra un mensaje y se crea el lead.
 
 Manual de usuario paso a paso: ver `MANUAL-DE-USO.md`.
+
+## Seguridad (auditoría)
+- **Sesiones revocables:** cada petición revisa en la base que el usuario exista y qué rol tiene (caché de 5 s). Cambiar la contraseña o el rol de alguien, o eliminarlo, cierra sus sesiones.
+- **Límite de intentos:** 8 fallos por correo y 30 por IP en 15 minutos → respuesta 429. La IP es la que agrega el proxy (último valor de `x-forwarded-for`); en tu servidor, el proxy (Caddy, Apache/Passenger, Nginx) debe estar delante.
+- **Contraseña inicial:** si el administrador entra con `ADMIN_PASSWORD`, el sistema le exige cambiarla antes de modificar datos.
+- **PIN de 6 dígitos** (los PIN anteriores de 4–5 siguen funcionando hasta que se cambien).
+- **Cabeceras:** CSP, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`, `Permissions-Policy` y HSTS (en producción).
+- **Adjuntos:** solo se abren si el usuario puede ver el lead.
+- Pendiente recomendado: registro de auditoría, copias de seguridad automáticas, política de contraseñas más estricta.

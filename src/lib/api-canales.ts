@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { q } from './db';
-import { HttpError, json, uid, str, hoyCR, safeEqual, digits } from './util';
+import { HttpError, json, uid, str, hoyCR, safeEqual, digits, ipDe } from './util';
 import { route } from './router';
 import { ETAPA_INICIAL_SQL, canalActivo, getAjuste, setSetting, logAct } from './leads';
 import { fbConfig } from './meta';
@@ -72,7 +72,7 @@ async function leerForm(req: Request): Promise<Record<string, any>> {
 
 route('POST', '/webhooks/web', async ({ req }) => {
   const ok = (extra: object = {}) => json({ ok: true, ...extra }, 200, CORS);
-  const ip = (req.headers.get('x-forwarded-for') || 'x').split(',')[0].trim();
+  const ip = ipDe(req);
   if (!limite(ip)) throw new HttpError(429, 'Demasiados envíos. Intenta más tarde.');
   const b = await leerForm(req);
   const esperado = await getAjuste('webToken');
