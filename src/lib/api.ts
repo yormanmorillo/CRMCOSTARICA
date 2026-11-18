@@ -14,6 +14,7 @@ import './api-canales';
 import './api-demo';
 import './api-correo';
 import './api-reportes';
+import './api-ayuda';
 
 export { dispatch } from './router';
 

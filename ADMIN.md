@@ -79,3 +79,25 @@ En **Admin → Canales → Correo** se conecta cualquier buzón por IMAP (recibi
 - **Revisión automática:** en un servidor propio, Pulso revisa cada ~90 segundos por sí solo. En Vercel (sin proceso permanente) programa una visita cada 2 minutos a la dirección que aparece en el panel (`/api/correo/revisar?token=…`).
 - Sin OAuth todavía: Google y Microsoft permiten contraseña de aplicación, pero algunas empresas con Microsoft 365 la tienen bloqueada; en ese caso hay que agregar «Conectar con Microsoft» (OAuth).
 - El simulador `/demo` tiene la pestaña **Correo**: manda un correo de cliente, uno con PDF, y ejemplos de boletín, respuesta automática y no-reply para mostrar que se filtran.
+
+## Roles, PIN, horario, categorías y etapas
+- **Roles** (Admin → Roles): crea roles con permisos (`ver_todos`, `eliminar_leads`, `reportes`). El rol `admin` siempre tiene todo.
+- **PIN** (Admin → Negocio y Usuarios): login rápido de 4–6 dígitos para no administradores; 5 fallos bloquean 15 minutos. Se puede apagar en Negocio.
+- **Horario laboral** (Admin → Negocio): al programar una tarea fuera de horario el sistema pide confirmación.
+- **Categorías** de productos (Admin → Productos) y etapas propias, incluida **En pausa** (Admin → Etapas).
+
+## Reportes
+Menú **Reportes** (permiso `reportes`): KPIs, tendencia, embudo, canales, motivos de pérdida, vendedores, productos y categorías. API: `GET /api/reportes?desde=AAAA-MM-DD&hasta=AAAA-MM-DD`.
+
+## Licencias (plan de servicio)
+- 14 días de prueba → licencia `PULSO1.…` firmada (Ed25519) → 7 días de cortesía al vencer → solo lectura (nunca se borran datos).
+- Pantalla Admin → Licencia: estado, días restantes, usuarios y cómo activarla.
+- **Emitir licencias (solo proveedor):** en TU instalación define `LICENCIA_PRIVATE_KEY` (PEM de `licencias/privada.pem`, con `\n` por saltos de línea). Aparece la tarjeta «Emitir licencia» en Admin → Licencia. También sirve `node scripts/licencia.mjs emitir …`. **Nunca** pongas esa variable en el servidor del cliente.
+
+## Ayuda (helpdesk)
+Menú **Ayuda**: cualquier usuario crea un ticket (título, módulo, prioridad, pasos). Se guarda y se envía por correo a `soporteEmail` (Admin → Negocio, o variable `SOPORTE_EMAIL`). El envío usa el correo SMTP configurado en Canales; si no hay, usa `SMTP_URL` (+ `SMTP_FROM`). Si falla, el ticket queda marcado «No se pudo enviar» con botón **Reintentar**. El administrador ve todos los tickets y cambia su estado (abierto / en curso / resuelto).
+
+## Simulador
+Botón **Simulador** en el menú (solo admin) abre `/demo` para mostrar a un cliente cómo entra un mensaje y se crea el lead.
+
+Manual de usuario paso a paso: ver `MANUAL-DE-USO.md`.

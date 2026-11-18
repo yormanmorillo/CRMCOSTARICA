@@ -172,6 +172,23 @@ create table if not exists categorias (
   creado timestamptz not null default now()
 );
 alter table productos add column if not exists categoria_id text;
+create table if not exists tickets (
+  id text primary key,
+  numero serial,
+  usuario_id text,
+  usuario_nombre text not null default '',
+  usuario_email text not null default '',
+  asunto text not null,
+  descripcion text not null default '',
+  prioridad text not null default 'media',
+  modulo text not null default '',
+  pagina text not null default '',
+  estado text not null default 'abierto',
+  enviado boolean not null default false,
+  error text not null default '',
+  creado timestamptz not null default now(),
+  actualizado timestamptz not null default now()
+);
 create table if not exists lead_productos (
   id text primary key,
   lead_id text not null references leads(id) on delete cascade,

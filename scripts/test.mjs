@@ -632,6 +632,23 @@ const msg = (o) => ({
     await call('DELETE', `/api/etapas/en-pausa`);
   }
   {
+    console.log('Ayuda (tickets)');
+    ok((await call('POST', '/api/tickets', { asunto: 'x' })).status === 400, 'un ticket necesita título');
+    await call('PATCH', '/api/ajustes', { soporteEmail: '' });
+    const t0 = await call('POST', '/api/tickets', { asunto: 'No carga el calendario', modulo: 'Calendario', prioridad: 'alta', descripcion: 'Pasos…' });
+    ok(t0.status === 201 && t0.json.enviado === false && /correo de soporte/i.test(t0.json.aviso), 'sin correo de soporte el ticket se guarda y avisa que no se envió');
+    await call('PATCH', '/api/ajustes', { soporteEmail: 'soporte@demo.test' });
+    const rr = await call('POST', `/api/tickets/${t0.json.ticket.id}/reenviar`);
+    ok(rr.json.enviado === true, 'con correo de soporte, el reenvío funciona');
+    const t1 = await call('POST', '/api/tickets', { asunto: 'Otro fallo', prioridad: 'urgente' }, { nocookie: true, headers: { cookie: vend } });
+    ok(t1.status === 201 && t1.json.enviado === true && t1.json.ticket.prioridad === 'urgente', 'un vendedor crea un ticket y sale al correo de soporte');
+    const mis = (await call('GET', '/api/tickets', undefined, { nocookie: true, headers: { cookie: vend } })).json.tickets;
+    ok(mis.length === 1 && mis[0].asunto === 'Otro fallo', 'el vendedor solo ve sus tickets');
+    ok((await call('GET', '/api/tickets')).json.tickets.length >= 2, 'el administrador ve todos');
+    ok((await call('PATCH', `/api/tickets/${t1.json.ticket.id}`, { estado: 'resuelto' })).status === 200, 'el administrador cambia el estado');
+    ok((await call('PATCH', `/api/tickets/${t1.json.ticket.id}`, { estado: 'resuelto' }, { nocookie: true, headers: { cookie: vend } })).status === 403, 'el vendedor no cambia estados');
+  }
+  {
     console.log('Reportes');
     const rp = await call('GET', '/api/reportes');
     ok(rp.status === 200 && rp.json.kpis && Array.isArray(rp.json.serie) && Array.isArray(rp.json.embudo) && Array.isArray(rp.json.porCanal), 'los reportes devuelven resumen, tendencia, embudo y canales');
