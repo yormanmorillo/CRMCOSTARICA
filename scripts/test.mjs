@@ -679,6 +679,52 @@ const msg = (o) => ({
     ok(r2.status === 200 && r2.headers.get('x-content-type-options') === 'nosniff', 'el dueño sí, con protección nosniff');
   }
   {
+    console.log('Contactos, compartir y calendario');
+    const l1 = (await call('POST', '/api/leads', { nombre: 'Rosa Campos', tel: '8888-7766', email: 'rosa@cliente.cr', canal: 'llamada' })).json.lead;
+    const l2 = (await call('POST', '/api/leads', { nombre: 'Rosa C.', tel: '+506 8888 7766', canal: 'whatsapp' })).json.lead;
+    const cts = (await call('GET', '/api/contactos?q=rosa')).json;
+    ok(cts.contactos.length === 1 && cts.contactos[0].leads === 2, 'dos leads con el mismo teléfono quedan en un solo contacto');
+    const cid = cts.contactos[0].id;
+    ok((await call('GET', '/api/contactos?q=88887766')).json.contactos.length === 1, 'se busca por teléfono');
+    const det = (await call('GET', `/api/contactos/${cid}`)).json;
+    ok(det.leads.length === 2 && det.contacto.email === 'rosa@cliente.cr', 'el contacto muestra sus leads y datos');
+    ok((await call('PATCH', `/api/contactos/${cid}`, { notas: 'Prefiere llamadas', empresa: 'Café Sol' })).json.contacto.empresa === 'Café Sol', 'se edita el contacto');
+    ok((await call('PATCH', `/api/contactos/${cid}`, { email: 'mal' })).status === 400, 'correo inválido se rechaza');
+    ok((await call('DELETE', `/api/contactos/${cid}`)).status === 409, 'no se elimina un contacto con leads');
+    await call('DELETE', `/api/leads/${l1.id}`); await call('DELETE', `/api/leads/${l2.id}`);
+    ok((await call('GET', '/api/contactos?q=rosa')).json.contactos.length === 1, 'el contacto se conserva aunque se eliminen sus leads');
+    const csv = await call('GET', '/api/contactos.csv');
+    ok(csv.status === 200 && csv.text.includes('Rosa Campos'), 'se exporta a CSV');
+    await call('POST', '/api/leads', { nombre: '=HYPERLINK("http://x")', canal: 'otro' });
+    ok(!(await call('GET', '/api/contactos.csv')).text.includes(',"=HYPERLINK'), 'el CSV protege contra fórmulas');
+    ok((await call('DELETE', `/api/contactos/${cid}`)).status === 200, 'sin leads, el administrador puede eliminar el contacto');
+    // contactos y visibilidad: quien no ve todo solo ve contactos con leads propios o sin asignar
+    const lp2 = await call('POST', '/api/auth/login', { email: 'propio@prueba.cr', password: 'clave-propio-12' }, { nocookie: true, headers: { 'x-forwarded-for': '10.9.9.7' } });
+    const cp2 = (lp2.headers.get('set-cookie') || '').split(';')[0];
+    const priv = (await call('POST', '/api/leads', { nombre: 'Contacto Privado Zeta', tel: '70001234', canal: 'web' })).json.lead;
+    ok((await call('GET', '/api/contactos?q=zeta', undefined, { nocookie: true, headers: { cookie: cp2 } })).json.contactos.length === 0, 'un rol sin «ver todos» no ve contactos de leads ajenos');
+    ok((await call('GET', '/api/contactos.csv', undefined, { nocookie: true, headers: { cookie: cp2 } })).status === 403, 'ni exporta todos los contactos');
+    // compartir lead
+    const lcmp = priv;
+    ok((await call('POST', `/api/leads/${lcmp.id}/compartir`, { email: 'mal' })).status === 400, 'compartir exige un correo válido');
+    const sh = await call('POST', `/api/leads/${lcmp.id}/compartir`, { email: 'colega@demo.test', nota: 'Llámalo mañana' });
+    ok(sh.status === 200, 'se comparte un lead por correo');
+    ok(sh.json.para === 'colega@demo.test', 'responde a quién se envió');
+    ok((await call('POST', `/api/leads/${lcmp.id}/compartir`, { email: 'colega@demo.test' }, { nocookie: true, headers: { cookie: cp2 } })).status === 403, 'no se comparte un lead ajeno');
+    // calendario
+    await call('POST', '/api/tareas', { leadId: lcmp.id, titulo: 'Llamar a Zeta', fecha: '2031-05-20', hora: '09:30', forzar: true });
+    const ics = await call('GET', '/api/calendario.ics');
+    ok(ics.status === 200 && ics.text.includes('BEGIN:VCALENDAR') && ics.text.includes('Llamar a Zeta'), 'se descarga el calendario .ics');
+    ok(ics.text.includes('DTSTART:20310520T153000Z'), 'la hora de Costa Rica se convierte bien a UTC (09:30 → 15:30Z)');
+    const en = (await call('GET', '/api/calendario/enlace')).json.url;
+    const feed = await fetch(en);
+    ok(feed.status === 200 && (await feed.text()).includes('Llamar a Zeta'), 'el enlace de suscripción funciona sin iniciar sesión');
+    ok((await fetch(en.replace(/.{6}\.ics$/, 'xxxxxx.ics'))).status === 404, 'un enlace falso no abre nada');
+    const en2 = (await call('POST', '/api/calendario/enlace')).json.url;
+    ok(en2 !== en && (await fetch(en)).status === 404 && (await fetch(en2)).status === 200, 'al generar un enlace nuevo, el anterior deja de servir');
+    ok((await call('POST', '/api/calendario/enviar', { para: 'otro@demo.test' })).status === 200, 'se envía el calendario por correo');
+  }
+  {
     console.log('Ayuda (tickets)');
     ok((await call('POST', '/api/tickets', { asunto: 'x' })).status === 400, 'un ticket necesita título');
     await call('PATCH', '/api/ajustes', { soporteEmail: '' });

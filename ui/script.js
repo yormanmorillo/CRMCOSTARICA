@@ -328,12 +328,13 @@ function renderAll(){
   if(view==='admin'&&window.renderAdmin)renderAdmin();
 }
 function setView(v){
-  var vistas=['panel','leads','calendario','conversaciones','reportes','ayuda','admin'];
+  var vistas=['panel','leads','contactos','calendario','conversaciones','reportes','ayuda','admin'];
   if(vistas.indexOf(v)<0||(v==='admin'&&S.me.rol!=='admin')||(v==='reportes'&&!can('reportes')))v='panel';
   view=v;document.body.dataset.view=v;
   vistas.forEach(function(x){$('#v-'+x).hidden=x!==v});
   if(v==='reportes')renderReportes();
   if(v==='ayuda')renderAyuda();
+  if(v==='contactos')renderContactos();
   $$('.snav button').forEach(function(b){if(b.dataset.view===v)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
   renderAll();
 }
@@ -481,6 +482,7 @@ function renderDrHead(){
     (gan?'<div class="banner ok" style="margin:0 20px 12px"><span><b>'+esc(etapaLabel(l.etapa))+'</b>'+(money(l.valor)?' · '+esc(money(l.valor)):'')+'</span></div>':(esPausa(l)?'<div class="banner" style="margin:0 20px 12px"><span><b>'+esc(etapaLabel(l.etapa))+'</b>: el lead está en pausa; no genera avisos hasta que lo muevas de etapa.</span></div>':''));
   $('#drHead').innerHTML='<div class="dr-top"><span class="av lg">'+esc(ini(l.nombre))+'</span><div class="id"><h2 id="drTitle">'+esc(l.nombre||'Sin nombre')+'</h2><div class="chips">'+canalChip(l.canal)+tipoTag(l)+autoTag(l)+(l.empresa?'<span class="tag">'+esc(l.empresa)+'</span>':'')+'</div></div>'+
       '<button class="starbtn'+(l.destacado?' on':'')+'" data-action="star" aria-pressed="'+l.destacado+'" aria-label="'+(l.destacado?'Quitar de destacados':'Destacar lead')+'" title="Destacar">'+(l.destacado?'★':'☆')+'</button>'+
+      '<button class="btn sm" data-action="ct-share" title="Enviar este lead por correo a un compañero">Compartir</button>'+
       '<button class="btn sm" data-action="close-drawer">Cerrar</button></div>'+
     banner+
     '<div class="dr-meta"><label class="fl">Etapa<select class="in" data-f="etapa">'+optHtml(etapaOpts(),l.etapa)+'</select></label>'+
@@ -765,6 +767,13 @@ function act(a,el){
     case 'ib-limpiar':IB.f='todas';IB.c='';IB.mios=false;IB.q='';IB.orden='reciente';{var qi=$('#ibq');if(qi)qi.value=''}renderInboxList();break;
     case 'road-go':moveEtapa(openId,el.dataset.e);break;
     case 'rp-rango':{RP.rango=el.dataset.r;if(RP.rango!=='otro'){var ff=rpFechas(RP.rango);RP.desde=ff[0];RP.hasta=ff[1]}renderReportes();break}
+    case 'ct-open':abrirContacto(id||el.dataset.id);break;
+    case 'ct-lead':closeOv('modalOv');openLead(el.dataset.id);break;
+    case 'ct-del':if(armed(el,'Toca otra vez para eliminar'))api('DELETE','/contactos/'+el.dataset.id).then(function(){closeOv('modalOv');toast('Contacto eliminado');cargarContactos()}).catch(fail);break;
+    case 'ct-share':abrirCompartir(openId);break;
+    case 'cal-conectar':abrirCalConectar();break;
+    case 'cal-copy':copyText(window.__calUrl||'',el);break;
+    case 'cal-regen':if(armed(el,'El enlace anterior dejará de funcionar. ¿Seguro?'))api('POST','/calendario/enlace').then(function(){toast('Enlace nuevo generado');abrirCalConectar()}).catch(fail);break;
     case 'open-demo':window.open('/demo','_blank');break;
     case 'rp-print':window.print();break;
     case 'star':{var ls=lead(openId);if(ls)api('PATCH','/leads/'+openId,{destacado:!ls.destacado}).then(function(r){put(r.lead);renderDrHead();renderAll()}).catch(fail);break}
@@ -880,6 +889,19 @@ document.addEventListener('submit',function(e){
   var fd=new FormData(f),g=function(k){return String(fd.get(k)||'').trim()};
   var btn=f.querySelector('button[type="submit"]');if(btn)btn.disabled=true;
   var done=function(){if(btn)btn.disabled=false};
+  if(kind==='contacto'){
+    api('PATCH','/contactos/'+f.dataset.id,{nombre:g('nombre'),tel:g('tel'),email:g('email'),empresa:g('empresa'),notas:g('notas')}).then(function(){closeOv('modalOv');toast('Contacto guardado');cargarContactos()}).catch(fail).then(done);
+    return;
+  }
+  if(kind==='compartir'){
+    if(!g('usuarioId')&&!g('email')){toast('Elige un compañero o escribe un correo');done();return}
+    api('POST','/leads/'+f.dataset.id+'/compartir',{usuarioId:g('usuarioId'),email:g('email'),nota:g('nota')}).then(function(r){closeOv('modalOv');toast('Lead enviado a '+r.para);if(openId===f.dataset.id)loadExtra(openId)}).catch(fail).then(done);
+    return;
+  }
+  if(kind==='cal-enviar'){
+    api('POST','/calendario/enviar',{para:g('para')}).then(function(){toast('Calendario enviado');closeOv('modalOv')}).catch(fail).then(done);
+    return;
+  }
   if(kind==='clave'){
     var er=$('#claveErr');
     if(g('nueva')!==g('nueva2')){er.textContent='Las dos contraseñas nuevas no coinciden.';er.hidden=false;done();return}

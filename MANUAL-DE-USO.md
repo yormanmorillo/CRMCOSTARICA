@@ -21,7 +21,8 @@ El menú está a la izquierda:
 |---|---|
 | **Panel** | Resumen del día: leads nuevos, seguimientos de hoy, lo urgente. |
 | **Leads** | Todos los leads, en tablero (columnas por etapa) o en lista. |
-| **Calendario** | Tus tareas y seguimientos por fecha. |
+| **Contactos** | Tu libreta de personas: se llena sola con cada lead y se conserva aunque el lead se elimine. Busca, edita y exporta a Excel. |
+| **Calendario** | Tus tareas y seguimientos por fecha. Botón **Conectar calendario** para verlo en Google, Outlook o Apple. |
 | **Conversaciones** | Los chats con clientes (WhatsApp, Instagram, Facebook, correo). |
 | **Reportes** | Gráficos de ventas, canales, embudo y motivos de pérdida. *(Solo si tu rol lo permite.)* |
 | **Ayuda** | Reportar un fallo o pedir ayuda al soporte. |
@@ -61,6 +62,12 @@ Para mostrarle a alguien cómo funciona **sin usar clientes reales**:
 3. **Programa el seguimiento:** crea una tarea con fecha y hora. Si la hora cae fuera del **horario de trabajo** del negocio, el sistema te lo advierte y tú decides si la dejas igual.
 4. **Mueve la etapa** conforme avance: *Inicial → En proceso → Ganado*, o *Perdido* (te pedirá el motivo). También existen etapas como **En pausa**, que el administrador puede crear.
 5. **Productos:** agrega lo que le vas a vender; el valor del lead se calcula solo.
+
+### Compartir un lead con un compañero
+Abre el lead y toca **Compartir** (arriba a la derecha). Elige a un compañero (o escribe otro correo), agrega un mensaje si quieres y envía. Le llega un resumen con los datos, productos y últimas atenciones. Requiere que el correo esté conectado (Admin → Canales).
+
+### Ver tu calendario en tu teléfono o en Google/Outlook
+En **Calendario** toca **Conectar calendario**, copia el enlace privado y pégalo en tu calendario ("Desde URL" en Google, "Suscribirse desde la web" en Outlook). Se actualiza solo. También puedes descargar el archivo `.ics` o enviarlo por correo.
 
 ## 5. Seguimiento diario (rutina de 5 minutos)
 

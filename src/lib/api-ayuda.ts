@@ -1,7 +1,7 @@
 import { q } from './db';
 import { HttpError, json, uid, str } from './util';
 import { route, body } from './router';
-import { leerCfg, listo, enviarCorreo, esDemoCorreo } from './correo';
+import { enviarMail } from './mail';
 import { getSettings } from './leads';
 
 /** Ayuda (helpdesk): cualquier usuario reporta un fallo; queda guardado y se envía al correo de soporte. */
@@ -10,17 +10,6 @@ const ESTADOS = ['abierto', 'en_curso', 'resuelto'];
 const MODULOS = ['Leads', 'Conversaciones', 'Calendario', 'Reportes', 'Admin', 'Canales (WhatsApp, redes, correo)', 'Inicio de sesión', 'Otro'];
 
 const fila = (r: any) => ({ id: r.id, numero: r.numero, usuario: r.usuario_nombre, email: r.usuario_email, asunto: r.asunto, descripcion: r.descripcion, prioridad: r.prioridad, modulo: r.modulo, estado: r.estado, enviado: r.enviado, error: r.error, creado: r.creado, actualizado: r.actualizado });
-
-async function enviarSoporte(para: string, asunto: string, cuerpo: string, responder?: string) {
-  if (esDemoCorreo(para)) return;
-  const cfg = await leerCfg();
-  if (listo(cfg)) return void (await enviarCorreo(para, asunto, cuerpo));
-  const url = process.env.SMTP_URL;
-  if (!url) throw new HttpError(503, 'No hay correo configurado para enviar (Admin, Canales, Correo).');
-  const nm = await import('nodemailer');
-  const t = nm.createTransport(url);
-  await t.sendMail({ from: process.env.SMTP_FROM || undefined, to: para, subject: asunto, text: cuerpo, replyTo: responder || undefined });
-}
 
 async function despachar(id: string) {
   const t = (await q('select * from tickets where id=$1', [id]))[0];
@@ -31,7 +20,7 @@ async function despachar(id: string) {
   if (!para) error = 'Falta el correo de soporte (Admin, Negocio).';
   else {
     const cuerpo = `Ticket #${t.numero} — prioridad ${t.prioridad.toUpperCase()}\nNegocio: ${aj.negocio}\nReportado por: ${t.usuario_nombre} <${t.usuario_email}>\nMódulo: ${t.modulo || '—'}\nPágina: ${t.pagina || '—'}\n\n${t.descripcion || '(sin descripción)'}\n`;
-    try { await enviarSoporte(para, `[Ticket #${t.numero}] ${t.asunto}`, cuerpo, t.usuario_email); }
+    try { await enviarMail(para, `[Ticket #${t.numero}] ${t.asunto}`, cuerpo, { responder: t.usuario_email }); }
     catch (e: any) { error = e?.message || 'No se pudo enviar'; }
   }
   await q('update tickets set enviado=$2, error=$3, actualizado=now() where id=$1', [id, !error, error]);

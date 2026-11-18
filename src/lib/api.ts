@@ -15,6 +15,8 @@ import './api-demo';
 import './api-correo';
 import './api-reportes';
 import './api-ayuda';
+import './api-contactos';
+import './api-agenda';
 
 export { dispatch } from './router';
 

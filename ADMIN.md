@@ -110,3 +110,8 @@ Manual de usuario paso a paso: ver `MANUAL-DE-USO.md`.
 - **Cabeceras:** CSP, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`, `Permissions-Policy` y HSTS (en producción).
 - **Adjuntos:** solo se abren si el usuario puede ver el lead.
 - Pendiente recomendado: registro de auditoría, copias de seguridad automáticas, política de contraseñas más estricta.
+
+## Contactos, compartir lead y calendario
+- **Contactos:** tabla `contactos` alimentada por un disparador de la base: cada lead (WhatsApp, Instagram, Facebook, web, correo, manual) se enlaza a un contacto por correo, teléfono (8 dígitos CR, con o sin +506) o id del chat. Se conservan si el lead se elimina. Menú **Contactos**: buscar, editar, notas, exportar CSV (solo con permiso «ver todos»). Los roles sin ese permiso solo ven contactos con leads propios o sin asignar.
+- **Compartir lead:** botón **Compartir** en la ficha → correo con resumen (usa el correo de Canales o `SMTP_URL`). Queda en el historial del lead.
+- **Calendario:** `GET /api/calendario.ics` (descarga), enlace privado de suscripción `/api/calendario/feed/<token>.ics` (por usuario, regenerable) y envío por correo. Es de **solo lectura** (CRM → Google/Outlook/Apple). La sincronización en ambos sentidos requeriría registrar una app OAuth con Google/Microsoft: no incluida.

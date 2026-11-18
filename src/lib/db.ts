@@ -240,6 +240,49 @@ create trigger lead_etapa_trg after insert or update of etapa on leads for each 
 insert into lead_etapas(lead_id, etapa, entrada)
   select l.id, l.etapa, coalesce(l.etapa_en, now()) from leads l
   where not exists (select 1 from lead_etapas h where h.lead_id = l.id);
+create table if not exists contactos (
+  id text primary key,
+  nombre text not null default '',
+  tel text not null default '',
+  tel_d text not null default '',
+  email text not null default '',
+  empresa text not null default '',
+  pais text not null default '',
+  notas text not null default '',
+  chat_ref text not null default '',
+  creado timestamptz not null default now(),
+  actualizado timestamptz not null default now()
+);
+create index if not exists contactos_email_idx on contactos (lower(email));
+create index if not exists contactos_tel_idx on contactos (tel_d);
+create index if not exists contactos_chat_idx on contactos (chat_ref);
+alter table leads add column if not exists contacto_id text;
+create index if not exists leads_contacto_idx on leads (contacto_id);
+alter table usuarios add column if not exists cal_token text;
+create or replace function lead_contacto() returns trigger as $fn$
+declare cid text; d text; ref text;
+begin
+  if tg_op = 'UPDATE' and new.contacto_id is not null then return new; end if;
+  d := regexp_replace(coalesce(new.tel, ''), '\\D', '', 'g');
+  if length(d) = 11 and left(d, 3) = '506' then d := right(d, 8); end if;
+  ref := case when coalesce(new.chat_id, '') <> '' then coalesce(new.chat_canal, '') || ':' || new.chat_id else '' end;
+  cid := null;
+  if coalesce(new.email, '') <> '' then select id into cid from contactos where lower(email) = lower(new.email) limit 1; end if;
+  if cid is null and length(d) >= 7 then select id into cid from contactos where tel_d = d limit 1; end if;
+  if cid is null and ref <> '' then select id into cid from contactos where chat_ref = ref limit 1; end if;
+  if cid is null then
+    cid := 'c' || new.id;
+    insert into contactos(id, nombre, tel, tel_d, email, empresa, pais, chat_ref)
+      values (cid, new.nombre, coalesce(new.tel, ''), d, coalesce(new.email, ''), coalesce(new.empresa, ''), coalesce(new.pais, ''), ref)
+      on conflict (id) do nothing;
+  end if;
+  new.contacto_id := cid;
+  return new;
+end
+$fn$ language plpgsql;
+drop trigger if exists lead_contacto_trg on leads;
+create trigger lead_contacto_trg before insert or update of tel, email, nombre on leads for each row execute function lead_contacto();
+update leads set nombre = nombre where contacto_id is null;
 create table if not exists eventos_cw (
   id serial primary key,
   evento text,
