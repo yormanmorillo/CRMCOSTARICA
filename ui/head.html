@@ -244,6 +244,7 @@ footer{margin-top:28px;color:var(--muted);font-size:12px}
 .ib-list,.ib-thread{background:var(--surface);border:1px solid var(--line);border-radius:12px;min-width:0;display:flex;flex-direction:column;overflow:hidden}
 .ib-tools{padding:10px;display:flex;flex-direction:column;gap:8px;border-bottom:1px solid var(--line)}
 .ib-tools .seg{display:flex}.ib-tools .seg button{flex:1;display:inline-flex;gap:6px;align-items:center;justify-content:center}
+.ib-tools .seg button{padding:6px 4px;white-space:nowrap;font-size:13px}
 .ib-items{overflow-y:auto;flex:1}
 .ib-it{display:flex;gap:10px;padding:10px 12px;border:0;border-bottom:1px solid var(--line);cursor:pointer;align-items:flex-start;width:100%;text-align:left;background:transparent}
 .ib-it:hover{background:var(--surface-2)}
@@ -388,6 +389,22 @@ a{color:var(--accent)}
 .themebtn{min-width:96px}
 .tkgrp{margin:12px 0 4px;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .prodhelp{border:1px dashed var(--line);border-radius:10px;padding:10px 12px;font-size:13px;color:var(--muted);margin-bottom:12px;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+
+/* Ficha del lead como ventana flotante grande */
+#drawerOv{justify-content:center;align-items:center;padding:clamp(8px,2.2vw,28px)}
+#drawerOv .drawer{width:min(1320px,100%);height:100%;max-height:100%;border-radius:18px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.45);padding-right:0;border:1px solid var(--line)}
+@media(prefers-reduced-motion:no-preference){#drawerOv:not([hidden]) .drawer{animation:ventana .18s ease-out}@keyframes ventana{from{opacity:0;transform:translateY(10px) scale(.985)}to{opacity:1;transform:none}}}
+@media(max-width:640px){#drawerOv{padding:0}#drawerOv .drawer{border-radius:0;border:0}}
+/* Filtros de Conversaciones */
+.chips-row{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;scrollbar-width:thin}
+.fchip{flex:none;border:1px solid var(--line);background:var(--surface);color:var(--muted);border-radius:99px;padding:4px 11px;font-size:12.5px;font-weight:500;cursor:pointer;display:inline-flex;gap:6px;align-items:center;white-space:nowrap}
+.fchip i{width:7px;height:7px;border-radius:50%;background:var(--c,var(--muted))}
+.fchip b{font-weight:600;color:var(--fg)}
+.fchip[aria-pressed="true"]{background:var(--sec);border-color:transparent;color:#fff}
+.fchip[aria-pressed="true"] b{color:#fff}.fchip[aria-pressed="true"] i{background:#fff}
+.ib-opts{display:flex;gap:8px}.ib-opts .in{min-height:32px;padding:4px 8px;font-size:13px;flex:1}
+.ib-opts .btn[aria-pressed="true"]{background:var(--sec);color:#fff;border-color:transparent}
+.linkbtn{border:0;background:none;color:var(--accent);cursor:pointer;text-decoration:underline;font-size:12.5px;text-align:left;padding:0}
 @media(max-width:560px){.who{display:none}}
 </style>
 <script>try{var t=localStorage.getItem('pulso-tema');if(t==='dark'||t==='light')document.documentElement.dataset.theme=t}catch(e){}</script>
@@ -444,7 +461,18 @@ a{color:var(--accent)}
             <div class="seg" role="group" aria-label="Filtro de conversaciones">
               <button data-action="ib-filtro" data-f="todas">Todas</button>
               <button data-action="ib-filtro" data-f="sin">Sin responder <span class="badge" id="ibSin" hidden></span></button>
+              <button data-action="ib-filtro" data-f="resp">Respondidas</button>
             </div>
+            <div class="chips-row" id="ibCanales" role="group" aria-label="Filtrar por canal"></div>
+            <div class="ib-opts">
+              <select id="ibOrden" class="in" aria-label="Ordenar conversaciones">
+                <option value="reciente">Más recientes primero</option>
+                <option value="antiguo">Más antiguas primero</option>
+                <option value="espera">Las que más esperan primero</option>
+              </select>
+              <button class="btn sm" type="button" data-action="ib-mios" id="ibMios" aria-pressed="false">Mis leads</button>
+            </div>
+            <button class="linkbtn" type="button" data-action="ib-limpiar" id="ibLimpiar" hidden>Quitar filtros</button>
           </div>
           <div class="ib-items" id="ibList"></div>
         </div>

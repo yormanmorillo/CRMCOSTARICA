@@ -98,7 +98,7 @@ var F={q:'',canal:'',tipo:'',etapa:'',asig:'',vista:'lista'};
 var X={id:null,notas:[],productos:[],actividad:[]};
 var AD={sec:'negocio'};
 var C={y:parse(today()).getFullYear(),m:parse(today()).getMonth(),sel:today()};
-var ibId=null,IB={f:'todas',q:''};
+var ibId=null,IB={f:'todas',q:'',c:'',orden:'reciente',mios:false};
 var CH={dr:{box:'chatBox',hint:'replyHint',btn:'replyBtn',ta:'replyText'},ib:{box:'ibBox',hint:'ibHint',btn:'ibBtn',ta:'ibText'}};
 
 function temaActual(){var t=document.documentElement.dataset.theme;if(t==='dark'||t==='light')return t;return window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'}
@@ -328,9 +328,28 @@ function convs(){
   var q=IB.q.trim().toLowerCase();
   return S.leads.filter(function(l){return l.tieneChat}).filter(function(l){
     if(IB.f==='sin'&&!(l.esperando&&activo(l)))return false;
+    if(IB.f==='resp'&&l.esperando)return false;
+    if(IB.c&&l.canal!==IB.c)return false;
+    if(IB.mios&&l.asignado!==S.me.id)return false;
     if(q&&(l.nombre+' '+l.tel+' '+(l.ultimoMsg?l.ultimoMsg.txt:'')).toLowerCase().indexOf(q)<0)return false;
     return true;
-  }).sort(function(a,b){var x=a.ultimoMsg?a.ultimoMsg.at:'',y=b.ultimoMsg?b.ultimoMsg.at:'';return x<y?1:x>y?-1:0});
+  }).sort(function(a,b){
+    var x=a.ultimoMsg?a.ultimoMsg.at:'',y=b.ultimoMsg?b.ultimoMsg.at:'';
+    if(IB.orden==='antiguo')return x<y?-1:x>y?1:0;
+    if(IB.orden==='espera'){var ea=a.esperando&&activo(a),eb=b.esperando&&activo(b);if(ea!==eb)return ea?-1:1;if(ea)return x<y?-1:x>y?1:0}
+    return x<y?1:x>y?-1:0;
+  });
+}
+function pintarFiltrosChat(){
+  var cs=S.leads.filter(function(l){return l.tieneChat}),cnt={};
+  cs.forEach(function(l){cnt[l.canal]=(cnt[l.canal]||0)+1});
+  var colorC={whatsapp:'wa',instagram:'ig',facebook:'fb',web:'web',llamada:'vio',otro:'web'};
+  var ks=Object.keys(cnt).sort(function(a,b){return cnt[b]-cnt[a]});
+  var h='<button class="fchip" type="button" data-action="ib-canal" data-c="" aria-pressed="'+(!IB.c)+'">Todos <b>'+cs.length+'</b></button>'+ks.map(function(k){return '<button class="fchip" type="button" data-action="ib-canal" data-c="'+esc(k)+'" aria-pressed="'+(IB.c===k)+'" style="--c:var(--'+(colorC[k]||'web')+')"><i></i>'+esc(canalLabel(k))+' <b>'+cnt[k]+'</b></button>'}).join('');
+  var box=$('#ibCanales');if(box&&box.dataset.sig!==h){box.dataset.sig=h;box.innerHTML=h}
+  var o=$('#ibOrden');if(o&&o.value!==IB.orden)o.value=IB.orden;
+  var m=$('#ibMios');if(m)m.setAttribute('aria-pressed',String(IB.mios));
+  var lim=$('#ibLimpiar');if(lim)lim.hidden=!(IB.f!=='todas'||IB.c||IB.mios||IB.q||IB.orden!=='reciente');
 }
 function renderInboxList(){
   var el=$('#ibList');if(!el)return;
@@ -338,9 +357,10 @@ function renderInboxList(){
   var n=S.leads.filter(function(l){return l.tieneChat&&l.esperando&&activo(l)}).length;
   var sb=$('#ibSin');sb.hidden=!n;sb.textContent=n;
   $$('[data-action="ib-filtro"]').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.f===IB.f))});
+  pintarFiltrosChat();
   var list=convs(),top=el.scrollTop;
   if(!list.length){
-    el.innerHTML=total?'<div class="ib-empty">No hay conversaciones con ese filtro.</div>':
+    el.innerHTML=total?'<div class="ib-empty">No hay conversaciones con esos filtros.</div>':
       (S.whatsapp.configurado||S.meta.configurado||(S.chatwoot.configurado&&S.chatwoot.activo)?
         '<div class="ib-empty"><b>Todavía no hay conversaciones</b>Cuando un cliente escriba por WhatsApp, Instagram o Facebook, su mensaje aparecerá aquí y su lead se creará solo.</div>':
         '<div class="ib-empty"><b>Falta conectar un canal</b>'+(S.me.rol==='admin'?'Abre Admin, Canales y sigue los pasos para recibir aquí los mensajes de tus clientes.':'Pídele al administrador que conecte los canales en Admin.')+'</div>');
@@ -673,6 +693,9 @@ function act(a,el){
     case 'ib-open':openThread(id);break;
     case 'ib-back':$('#inbox').classList.remove('abierto');ibId=null;$('#ibThread').dataset.vacio='';renderInboxList();break;
     case 'ib-filtro':IB.f=el.dataset.f;renderInboxList();break;
+    case 'ib-canal':IB.c=el.dataset.c;renderInboxList();break;
+    case 'ib-mios':IB.mios=!IB.mios;renderInboxList();break;
+    case 'ib-limpiar':IB.f='todas';IB.c='';IB.mios=false;IB.q='';IB.orden='reciente';{var qi=$('#ibq');if(qi)qi.value=''}renderInboxList();break;
     case 'star':{var ls=lead(openId);if(ls)api('PATCH','/leads/'+openId,{destacado:!ls.destacado}).then(function(r){put(r.lead);renderDrHead();renderAll()}).catch(fail);break}
     case 'dr-go':{var tg=document.getElementById(el.dataset.t);if(tg){tg.scrollIntoView({block:'start',behavior:'smooth'});if(el.dataset.canal){var ac=$('#attCanal');if(ac)ac.value=el.dataset.canal}var ff=document.getElementById(el.dataset.f);if(ff)setTimeout(function(){ff.focus({preventScroll:true})},250)}break}
     case 'tag-del':{var lt=lead(openId);if(lt){var nt=lt.etiquetas.filter(function(_,i){return i!==parseInt(el.dataset.i,10)});api('PATCH','/leads/'+openId,{etiquetas:nt}).then(function(r){put(r.lead);renderDrTags();renderAll()}).catch(fail)}break}
@@ -739,6 +762,7 @@ document.addEventListener('input',function(e){
 });
 document.addEventListener('change',function(e){
   var el=e.target;
+  if(el.id==='ibOrden'){IB.orden=el.value;renderInboxList();return}
   if(el.id==='fcanal'){F.canal=el.value;renderLeads();return}
   if(el.id==='fetapa'){F.etapa=el.value;renderLeads();return}
   if(el.id==='fasig'){F.asig=el.value;renderLeads();return}
