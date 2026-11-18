@@ -120,7 +120,7 @@ textarea.in{resize:vertical}
 .toolbar .in{width:auto}
 .toolbar .grow{flex:1 1 240px}
 .lhead,.lrow{display:grid;grid-template-columns:36px minmax(0,2fr) minmax(0,5.2fr);gap:12px;align-items:center}
-.cells{display:grid;grid-template-columns:120px 150px 130px minmax(0,1.5fr) 120px;gap:12px;align-items:center}
+.cells{display:grid;grid-template-columns:110px 130px minmax(0,1.5fr) 130px 100px 90px;gap:12px;align-items:center}
 .lhead{font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);padding:6px 14px}
 .lhead .cells{grid-column:3}
 .list{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
@@ -177,7 +177,7 @@ textarea.in{resize:vertical}
 .ov{position:fixed;inset:0;background:rgba(8,18,13,.5);z-index:50;display:flex;justify-content:flex-end}
 .ov.center{align-items:center;justify-content:center;padding:16px;z-index:60}
 .ov.lb{z-index:70;background:rgba(0,0,0,.82);flex-direction:column;gap:10px}
-.drawer{width:min(580px,100%);height:100%;background:var(--surface);display:flex;flex-direction:column;box-shadow:-8px 0 30px rgba(0,0,0,.25);padding-right:env(safe-area-inset-right,0px)}
+.drawer{width:min(680px,100%);height:100%;background:var(--surface);display:flex;flex-direction:column;box-shadow:-8px 0 30px rgba(0,0,0,.25);padding-right:env(safe-area-inset-right,0px)}
 .dr-top{display:flex;gap:12px;align-items:center;padding:calc(16px + env(safe-area-inset-top,0px)) 20px 10px}
 .dr-top .id{flex:1;min-width:0}
 .dr-top h2{font-size:20px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -272,6 +272,86 @@ footer{margin-top:28px;color:var(--muted);font-size:12px}
 .msg .est{display:block;margin-top:3px;font-size:12px;opacity:.85}
 .msg .est.mal{opacity:1;font-weight:600;text-decoration:underline dotted}
 .msg:has(.est.mal){outline:2px solid var(--crit)}
+
+/* Etapas, tarjetas del tablero y ficha ampliada */
+.col{border-top:3px solid var(--c,var(--line))}
+.col h3 .sum{display:block;font-size:11px;font-weight:500;color:var(--muted);margin-top:1px}
+.col h3 .cnt{color:var(--muted);font-weight:500}
+.kc.star{border-color:var(--warn)}
+.kc .top{display:flex;gap:6px;justify-content:space-between;align-items:flex-start}
+.kc .top b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kc .sub2{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kc .meta{display:flex;flex-wrap:wrap;gap:3px 10px;font-size:12px;color:var(--muted)}
+.kc .meta b{color:var(--fg);font-weight:600}
+.kc .foot{display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap}
+.av.sm{width:24px;height:24px;font-size:10px}
+.tagp{display:inline-flex;font-size:11px;padding:1px 8px;border-radius:99px;background:var(--surface-2);color:var(--fg);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tagp.x{padding-right:4px;gap:4px;align-items:center}
+.tagp.x button{border:0;background:transparent;color:var(--muted);cursor:pointer;padding:0 3px;font-size:12px}
+.tagp.x button:hover{color:var(--crit)}
+.starbtn{border:0;background:transparent;cursor:pointer;font-size:20px;line-height:1;color:var(--muted);padding:2px 4px}
+.starbtn.on{color:var(--warn)}
+.acts{display:flex;flex-wrap:wrap;gap:8px}
+.banner{border-radius:10px;padding:10px 12px;font-size:13px;background:var(--crit-soft);color:var(--crit);display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.banner.ok{background:var(--ok-soft);color:var(--ok)}
+.pitems{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+.prod{display:grid;grid-template-columns:minmax(0,1fr) 64px 96px auto;gap:8px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+.prod:first-child{border-top:0}
+.prod .nm b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prod .st2{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+@media(max-width:520px){.prod{grid-template-columns:minmax(0,1fr) 60px 84px}.prod .st2{grid-column:1/-1}}
+.total{display:flex;justify-content:flex-end;gap:14px;font-weight:700;font-family:var(--font-display);padding-top:8px;border-top:2px solid var(--line)}
+.nota{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--surface-2);margin-top:10px}
+.nota p{margin:4px 0 0;white-space:pre-wrap}
+.nota .m{display:flex;gap:8px;justify-content:space-between;font-size:12px;color:var(--muted)}
+.motivos{display:flex;flex-direction:column;gap:6px}
+.motivos label{display:flex;gap:10px;align-items:center;border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer}
+.motivos label:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+.lic{padding:8px 16px;font-size:13px;font-weight:500;text-align:center;background:var(--warn-soft);color:var(--warn)}
+.lic.mal{background:var(--crit-soft);color:var(--crit)}
+.lic button{border:0;background:transparent;text-decoration:underline;cursor:pointer;color:inherit;font:inherit}
+.ch-llamada{--c:var(--vio)}
+
+/* Panel de administración */
+.adm{display:grid;grid-template-columns:210px minmax(0,1fr);gap:16px;align-items:start}
+.adm-nav{display:flex;flex-direction:column;gap:2px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:6px;position:sticky;top:8px}
+.adm-nav button{border:0;background:transparent;text-align:left;padding:9px 12px;border-radius:8px;cursor:pointer;color:var(--muted);font-weight:500}
+.adm-nav button[aria-current="true"]{background:var(--accent-soft);color:var(--fg);font-weight:600}
+.adm-body{display:flex;flex-direction:column;gap:16px;min-width:0}
+@media(max-width:860px){.adm{grid-template-columns:minmax(0,1fr)}.adm-nav{flex-direction:row;overflow-x:auto;position:static}.adm-nav button{white-space:nowrap}}
+.card h2{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.rowline{display:grid;gap:8px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+.rowline:first-of-type{border-top:0}
+.r-et{grid-template-columns:minmax(120px,1.4fr) 110px 120px auto}
+.r-mo{grid-template-columns:minmax(120px,1fr) auto}
+.r-pr{grid-template-columns:minmax(120px,1.4fr) 100px 80px auto}
+.r-us{grid-template-columns:minmax(0,1.2fr) minmax(0,1.4fr) 120px auto}
+@media(max-width:700px){.r-et,.r-pr,.r-us{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.r-et>*:first-child,.r-pr>*:first-child{grid-column:1/-1}}
+.btns{display:flex;gap:6px;flex-wrap:wrap}
+.sw{display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-weight:600}
+.sw input{position:absolute;opacity:0}
+.sw i{width:40px;height:22px;border-radius:99px;background:var(--line);position:relative;transition:background .15s}
+.sw i::after{content:"";position:absolute;left:2px;top:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform .15s}
+.sw input:checked+i{background:var(--accent)}
+.sw input:checked+i::after{transform:translateX(18px)}
+.sw input:focus-visible+i{outline:2px solid var(--accent);outline-offset:2px}
+.chan{border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.chan header{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.chan h3{font-size:15px}
+pre.code{background:var(--surface-2);border-radius:8px;padding:10px;font-size:12px;overflow:auto;margin:0;white-space:pre-wrap;word-break:break-all}
+.gal{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px}
+.gal .g{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--surface);display:flex;flex-direction:column}
+.gal .g>button.th{border:0;padding:0;cursor:pointer;background:var(--surface-2);aspect-ratio:1;display:block}
+.gal img{width:100%;height:100%;object-fit:cover;display:block}
+.gal .g .cap{padding:6px 8px;font-size:12px;min-width:0}
+.gal .g .cap b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-align:left;padding:6px 8px}
+.tbl td{padding:8px;border-top:1px solid var(--line);vertical-align:top}
+.tbl tr[data-open]{cursor:pointer}.tbl tr[data-open]:hover{background:var(--surface-2)}
+.tblwrap{overflow-x:auto}
+.kv{display:grid;grid-template-columns:140px minmax(0,1fr);gap:6px 12px;font-size:13px}
+.kv dt{color:var(--muted)}.kv dd{margin:0;font-weight:500;word-break:break-word}
 @media(max-width:560px){.who{display:none}}
 </style>
 </head><body>
@@ -289,10 +369,12 @@ footer{margin-top:28px;color:var(--muted);font-size:12px}
       <button data-action="nav" data-view="conversaciones" id="tabChat"><span class="t-largo">Conversaciones</span><span class="t-corto">Chats</span> <span class="badge" id="bdgChat" hidden></span></button>
     </nav>
     <div class="actions">
-      <span class="who" id="who"></span><button class="btn" data-action="settings">Ajustes</button><button class="btn" data-action="logout">Salir</button>
+      <span class="who" id="who"></span><button class="btn" data-action="nav" data-view="admin" id="adminBtn" hidden>Admin</button><button class="btn" data-action="logout">Salir</button>
       <button class="btn primary" data-action="new-lead">+ Nuevo lead</button>
     </div>
   </header>
+
+  <div class="lic" id="licBar" hidden></div>
 
   <main>
     <section id="v-panel" class="view" aria-label="Panel"><p class="muted">Cargando…</p></section>
@@ -307,6 +389,7 @@ footer{margin-top:28px;color:var(--muted);font-size:12px}
         </div>
         <select id="fcanal" class="in" aria-label="Canal"></select>
         <select id="fetapa" class="in" aria-label="Etapa"></select>
+        <select id="fasig" class="in" aria-label="Asignado a"></select>
         <div class="seg" role="group" aria-label="Vista">
           <button data-action="f-vista" data-v="lista">Lista</button>
           <button data-action="f-vista" data-v="tablero">Tablero</button>
@@ -331,6 +414,8 @@ footer{margin-top:28px;color:var(--muted);font-size:12px}
         <div class="ib-thread" id="ibThread"></div>
       </div>
     </section>
+
+    <section id="v-admin" class="view" aria-label="Administración" hidden></section>
 
     <section id="v-calendario" class="view" aria-label="Calendario" hidden>
       <div class="calhead">

@@ -66,7 +66,7 @@ bash scripts/conectar-chatwoot.sh
 
 Te pide el **número de cuenta** de Chatwoot (aparece en la dirección del navegador: `.../app/accounts/NUMERO/...`) y tu **token de acceso** (abajo a la izquierda, tu nombre, "Profile Settings", "Access Token").
 
-Al terminar te muestra una dirección larga. Cópiala y pégala en Chatwoot: **Ajustes, Integraciones, Webhooks, Agregar nuevo webhook**, marcando los eventos **"Conversación creada"** y **"Mensaje creado"**.
+Al terminar te muestra una dirección larga. Antes, en Pulso CRM entra a **Admin, Canales** y enciende el interruptor de Chatwoot (viene apagado). Cópiala y pégala en Chatwoot: **Ajustes, Integraciones, Webhooks, Agregar nuevo webhook**, marcando los eventos **"Conversación creada"** y **"Mensaje creado"**.
 
 ## Paso 5. Ver las conversaciones dentro de Pulso CRM
 
@@ -76,7 +76,7 @@ No tienes que hacer nada más: al terminar el Paso 4, los chats que lleguen por 
 
 Escríbele un mensaje a tu WhatsApp (o usa el chat de tu página). En unos segundos el lead aparece en `https://crm.tuempresa.com` y la conversación se ve dentro de su ficha, donde también puedes responder.
 
-Si no aparece, entra a Pulso CRM, **Ajustes, "Últimos avisos recibidos"**: ahí se ve qué llegó y qué se hizo con cada aviso.
+Si no aparece, entra a Pulso CRM, **Admin, Canales, "Últimos avisos"**: ahí se ve qué llegó y qué se hizo con cada aviso.
 
 ---
 
@@ -94,7 +94,7 @@ Si no aparece, entra a Pulso CRM, **Ajustes, "Últimos avisos recibidos"**: ahí
 
 **Respaldos.** Haz uno antes de cualquier cambio, y programa uno cada noche. Copia la carpeta `respaldos` a otro lugar, porque uno guardado solo en el mismo servidor no sirve si el servidor falla. Para programarlo: `crontab -e` y agrega `0 3 * * * cd /ruta/CRMCOSTARICA && bash scripts/respaldo.sh`.
 
-**Agregar vendedores.** En Pulso CRM, Ajustes, Usuarios.
+**Agregar vendedores.** En Pulso CRM, Admin, Usuarios.
 
 ## Si algo falla
 

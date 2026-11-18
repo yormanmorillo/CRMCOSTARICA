@@ -14,9 +14,11 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { failN+
 // Chatwoot y Meta (Graph API) simulados: guardan lo que reciben
 const recibidos = [];
 const waEnviados = [];
+const socEnviados = [];
 const fake = http.createServer((req, res) => {
   let b = ''; req.on('data', (d) => (b += d));
   req.on('end', () => {
+    if (req.url.startsWith('/pub/')) { res.setHeader('content-type', 'image/png'); return res.end(PNG); }
     if (req.url.startsWith('/graph/') || req.url.startsWith('/media/')) {
       const auth = req.headers.authorization;
       res.setHeader('content-type', 'application/json');
@@ -27,6 +29,11 @@ const fake = http.createServer((req, res) => {
         if (j.to === '50670009999') { res.statusCode = 400; return res.end(JSON.stringify({ error: { message: '(#131047) Re-engagement message', code: 131047 } })); }
         return res.end(JSON.stringify({ messaging_product: 'whatsapp', messages: [{ id: 'wamid.OUT' + waEnviados.length }] }));
       }
+      if (req.method === 'POST' && req.url === '/graph/PAGEID/messages') {
+        const j = JSON.parse(b); socEnviados.push({ auth, ...j });
+        return res.end(JSON.stringify({ recipient_id: j.recipient.id, message_id: 'mid.OUT' + socEnviados.length }));
+      }
+      if (/^\/graph\/(IGU|FBU)\d+\?/.test(req.url)) return res.end(JSON.stringify({ name: { IGU1: 'Sofi IG', FBU1: 'Luis FB' }[req.url.split('?')[0].split('/').pop()] || '' }));
       if (req.url.startsWith('/graph/PHID?')) return res.end(JSON.stringify({ display_phone_number: '+506 2222 3333', verified_name: 'Hotel Prueba' }));
       if (req.url === '/graph/MEDIA_ROTO') { res.statusCode = 404; return res.end(JSON.stringify({ error: { message: 'no existe' } })); }
       if (req.url.startsWith('/graph/MEDIA')) return res.end(JSON.stringify({ url: 'http://localhost:4010/media/' + req.url.split('/').pop(), mime_type: 'image/png', file_size: PNG.length }));
@@ -83,6 +90,13 @@ const msg = (o) => ({
   ok((await call('GET', '/', undefined, { nocookie: true })).status === 302, 'la página principal redirige al login si no hay sesión');
   ok((await call('GET', '/')).text.includes('Pulso CRM'), 'la página principal carga con sesión');
   ok((await call('GET', '/login')).status === 302, 'el login redirige si ya hay sesión');
+
+  console.log('Chatwoot: apagado por defecto, se enciende con un interruptor');
+  let st0 = (await call('GET', '/api/state')).json;
+  ok(st0.chatwoot.activo === false && st0.whatsapp.activo === true && st0.meta.activo === true && st0.web.activo === true, 'Chatwoot nace apagado y los demás canales encendidos');
+  const apagado = await hook(msg({ id: 9, content: 'hola', conv: 9, channel: 'Channel::Whatsapp', sender: { id: 99, name: 'Apagado', type: 'contact' } }));
+  ok(apagado.status === 200 && /ignorado/.test(apagado.json.resultado) && !(await call('GET', '/api/state')).json.leads.some((l) => l.nombre === 'Apagado'), 'con Chatwoot apagado sus avisos se ignoran');
+  ok((await call('PATCH', '/api/ajustes', { chatwootActivo: true })).status === 200 && (await call('GET', '/api/state')).json.chatwoot.activo === true, 'el admin enciende Chatwoot');
 
   console.log('Webhook: seguridad');
   const base = msg({ id: 1, content: 'hola', conv: 10, channel: 'Channel::Whatsapp', sender: { id: 100, name: 'X', type: 'contact' } });
@@ -186,7 +200,7 @@ const msg = (o) => ({
   ok((await waHook(base0, { sign: false })).status === 401, 'sin firma de Meta se rechaza');
   ok((await waHook(base0, { secret: 'falsa' })).status === 401, 'firma falsa se rechaza');
   ok((await waHook(null, { raw: '{no es json' })).status === 400, 'JSON inválido (con firma buena) da 400');
-  ok((await waHook({ object: 'instagram', entry: [] })).json.resultado.includes('ignorado'), 'otros tipos de aviso se ignoran sin error');
+  ok((await waHook({ object: 'application', entry: [] })).json.resultado.includes('ignorado'), 'otros tipos de aviso se ignoran sin error');
 
   console.log('WhatsApp directo: crear leads');
   const a1 = await waHook(base0);
@@ -331,6 +345,170 @@ const msg = (o) => ({
   ok(est.webhookUrl?.includes('/api/webhooks/chatwoot?token=') && est.configurado.token && est.recientes.length > 0, 'estado de Chatwoot con dirección del webhook y avisos recientes');
   ok((await call('POST', '/api/leads', { nombre: 'Malicioso' }, { headers: { origin: 'https://evil.example' } })).status === 403, 'se bloquean envíos desde otro sitio web');
   ok((await call('GET', '/api/inexistente')).status === 404, 'ruta inexistente da 404');
+
+  {
+  console.log('Leads: llamadas manuales, etiquetas, asignación y destacados');
+  const me = (await call('GET', '/api/state')).json.me;
+  const cl = await call('POST', '/api/leads', { nombre: 'Cliente Llamada', canal: 'llamada', tel: '+50660001111', empresa: 'Hotel X', interes: 'Llamó pidiendo tarifas' });
+  ok(cl.status === 201 && cl.json.lead.canal === 'llamada' && cl.json.lead.empresa === 'Hotel X' && cl.json.lead.etapa === 'nuevo', 'se crea un lead por llamada, con empresa, en la etapa inicial');
+  ok(cl.json.lead.asignado === me.id, 'el lead queda asignado a quien lo crea');
+  const LID = cl.json.lead.id;
+  const pt = await call('PATCH', `/api/leads/${LID}`, { etiquetas: ['VIP', 'grupo'], destacado: true });
+  ok(pt.json.lead.etiquetas.join() === 'VIP,grupo' && pt.json.lead.destacado === true, 'etiquetas y destacado');
+  const vendU = (await call('GET', '/api/usuarios')).json.usuarios.find((u) => u.email === 'v1@prueba.cr');
+  ok((await call('PATCH', `/api/leads/${LID}`, { asignado: vendU.id })).json.lead.asignadoNombre === 'Vendedor Uno', 'se reasigna el lead a otro usuario');
+  ok((await call('PATCH', `/api/leads/${LID}`, { asignado: 'no-existe' })).status === 400, 'no se asigna a un usuario que no existe');
+
+  console.log('Productos en el lead');
+  ok((await call('POST', '/api/productos', { nombre: 'Paquete 3 noches', precio: 150000, moneda: 'CRC' }, { nocookie: true, headers: { cookie: vend } })).status === 403, 'el vendedor no crea productos');
+  const pr = await call('POST', '/api/productos', { nombre: 'Paquete 3 noches', descripcion: 'Con desayuno', precio: 150000, moneda: 'CRC' });
+  ok(pr.status === 201, 'el admin crea un producto');
+  const PID = pr.json.producto.id;
+  const pr2 = await call('POST', '/api/productos', { nombre: 'Tour', precio: 80, moneda: 'USD' });
+  const ap = await call('POST', `/api/leads/${LID}/productos`, { productoId: PID, cantidad: 2 });
+  ok(ap.status === 201 && ap.json.lead.valor.CRC === 300000 && ap.json.lead.nProductos === 1, 'agregar producto suma el valor del lead');
+  await call('POST', `/api/leads/${LID}/productos`, { productoId: pr2.json.producto.id, cantidad: 1, precio: 70 });
+  let ex = (await call('GET', `/api/leads/${LID}/extra`)).json;
+  ok(ex.productos.length === 2 && ex.productos.some((x) => x.moneda === 'USD' && x.precio === 70), 'precio propio y dos monedas en el mismo lead');
+  const lp = ex.productos.find((x) => x.nombre === 'Paquete 3 noches');
+  ok((await call('PATCH', `/api/lead-productos/${lp.id}`, { cantidad: 3 })).json.lead.valor.CRC === 450000, 'cambiar cantidad recalcula');
+  await call('PATCH', `/api/productos/${PID}`, { precio: 999999 });
+  ok((await call('GET', `/api/leads/${LID}/extra`)).json.productos.find((x) => x.id === lp.id).precio === 150000, 'cambiar el catálogo no altera lo ya cotizado');
+  ok((await call('POST', `/api/leads/${LID}/productos`, { nombre: '' })).status === 400, 'un producto sin nombre se rechaza');
+  ok((await call('DELETE', `/api/lead-productos/${lp.id}`)).json.lead.nProductos === 1, 'quitar producto del lead');
+  await call('PATCH', `/api/productos/${pr2.json.producto.id}`, { activo: false });
+  ok(!(await call('GET', '/api/state')).json.productos.some((x) => x.nombre === 'Tour'), 'un producto oculto no sale en el catálogo del lead');
+
+  console.log('Notas y línea de tiempo');
+  ok((await call('POST', `/api/leads/${LID}/notas`, { texto: '' })).status === 400, 'una nota vacía se rechaza');
+  ok((await call('POST', `/api/leads/${LID}/notas`, { texto: 'Prefiere llamadas en la tarde' })).status === 201, 'se guarda una nota');
+  ex = (await call('GET', `/api/leads/${LID}/extra`)).json;
+  ok(ex.notas.length === 1 && ex.notas[0].usuario && ex.actividad.length >= 3, 'la ficha trae notas y línea de tiempo: ' + ex.actividad.map((a) => a.tipo).join());
+  ok((await call('DELETE', `/api/notas/${ex.notas[0].id}`, undefined, { nocookie: true, headers: { cookie: vend } })).status === 403, 'un vendedor no borra la nota de otro');
+  ok((await call('DELETE', `/api/notas/${ex.notas[0].id}`)).status === 200, 'el autor borra su nota');
+
+  console.log('Etapas editables');
+  ok((await call('GET', '/api/etapas', undefined, { nocookie: true, headers: { cookie: vend } })).status === 403, 'el vendedor no administra etapas');
+  const ne = await call('POST', '/api/etapas', { nombre: 'Reserva confirmada', color: 'ok', tipo: 'abierta' });
+  ok(ne.status === 201 && ne.json.etapas.some((e) => e.nombre === 'Reserva confirmada'), 'se agrega una etapa');
+  const clave = ne.json.etapas.find((e) => e.nombre === 'Reserva confirmada').clave;
+  ok((await call('PATCH', `/api/etapas/${clave}`, { nombre: 'Reservado', color: 'vio' })).json.etapas.find((e) => e.clave === clave).nombre === 'Reservado', 'se renombra y cambia de color');
+  const antesE = (await call('GET', '/api/etapas')).json.etapas.map((e) => e.clave);
+  const mv = (await call('POST', '/api/etapas/mover', { clave, dir: 'up' })).json.etapas.map((e) => e.clave);
+  ok(mv.indexOf(clave) === antesE.indexOf(clave) - 1, 'se sube de posición');
+  ok((await call('PATCH', `/api/leads/${LID}`, { etapa: clave })).json.lead.etapa === clave, 'un lead se puede mover a la etapa nueva');
+  ok((await call('DELETE', `/api/etapas/${clave}`)).status === 409, 'no se borra una etapa que tiene leads');
+  await call('PATCH', `/api/leads/${LID}`, { etapa: 'nuevo' });
+  ok((await call('DELETE', `/api/etapas/${clave}`)).status === 200, 'vacía, sí se borra');
+  ok((await call('DELETE', '/api/etapas/perdido')).status === 409, 'no se puede quedar sin etapa de perdido');
+  ok((await call('PATCH', '/api/etapas/ganado', { tipo: 'abierta' })).status === 409, 'no se puede quedar sin etapa de ganado');
+  ok((await call('PATCH', `/api/leads/${LID}`, { etapa: 'inventada' })).status === 400, 'etapa inexistente se rechaza');
+
+  console.log('Motivos de pérdida');
+  ok((await call('PATCH', `/api/leads/${LID}`, { etapa: 'perdido' })).status === 400, 'perder un lead sin motivo se rechaza');
+  const lost = await call('PATCH', `/api/leads/${LID}`, { etapa: 'perdido', motivoId: 'm-caro', motivoNota: 'Pedía 30% de descuento' });
+  ok(lost.status === 200 && lost.json.lead.motivo === 'Le pareció muy caro' && lost.json.lead.motivoNota.includes('30%') && lost.json.lead.perdidoEn, 'se guarda motivo, detalle y fecha');
+  ok((await call('PATCH', `/api/leads/${LID}`, { motivoId: 'm-competencia' })).json.lead.motivo === 'Se fue con la competencia', 'se corrige el motivo de un lead ya perdido');
+  ok((await call('PATCH', `/api/leads/${LID}`, { motivoId: 'm-caro' })).status === 200, 'volver a dejar "muy caro"');
+  ok((await call('DELETE', '/api/motivos/m-caro')).status === 409, 'un motivo ya usado no se borra');
+  ok((await call('PATCH', '/api/motivos/m-caro', { nombre: 'Muy caro', activo: false })).status === 200 && !(await call('GET', '/api/state')).json.motivos.some((m) => m.id === 'm-caro'), 'se oculta un motivo');
+  const nm = await call('POST', '/api/motivos', { nombre: 'No tenía presupuesto' });
+  ok(nm.status === 201 && (await call('GET', '/api/motivos')).json.motivos.some((m) => m.nombre === 'No tenía presupuesto'), 'se agrega un motivo');
+  const re = await call('PATCH', `/api/leads/${LID}`, { etapa: 'contactado' });
+  ok(re.json.lead.motivo === '' && !re.json.lead.perdidoEn, 'reabrir el lead borra el motivo');
+
+  console.log('Galería de imágenes (admin)');
+  const gal = await call('GET', '/api/admin/archivos?origen=todas&limit=10');
+  ok(gal.status === 200 && gal.json.total >= 1 && gal.json.items[0].url.startsWith('/api/'), 'la galería lista imágenes: ' + gal.json?.total);
+  ok((await call('GET', '/api/admin/archivos?origen=chat')).json.items.every((i) => i.origen === 'chat'), 'filtro por imágenes del chat');
+  ok((await call('GET', '/api/admin/archivos', undefined, { nocookie: true, headers: { cookie: vend } })).status === 403, 'el vendedor no ve la galería');
+  const chatImg = (await call('GET', '/api/admin/archivos?origen=chat')).json.items[0];
+  if (chatImg) ok((await call('DELETE', `/api/medios/${chatImg.id}`)).status === 200 && (await fetch(BASE + chatImg.url, { headers: { cookie } })).status === 404, 'se borra una imagen del chat');
+
+  console.log('Formulario de la página web');
+  const wcfg = await call('GET', '/api/canales/web');
+  ok(wcfg.status === 200 && wcfg.json.token.length >= 20 && wcfg.json.url.endsWith('/api/webhooks/web'), 'el admin ve la clave y la dirección del formulario');
+  ok((await call('GET', '/api/canales/web', undefined, { nocookie: true, headers: { cookie: vend } })).status === 403, 'el vendedor no ve la clave del formulario');
+  const WT = wcfg.json.token;
+  const fw = (b) => call('POST', '/api/webhooks/web', b, { nocookie: true });
+  ok((await fw({ token: 'mala', nombre: 'X' })).status === 401, 'clave incorrecta se rechaza');
+  const w1f = await fw({ token: WT, nombre: 'Marie Dupont', email: 'marie@example.fr', tel: '+33612345678', mensaje: 'Quiero reservar 5 noches en abril' });
+  ok(w1f.status === 200 && w1f.json.lead === 'creado' && w1f.headers.get('access-control-allow-origin') === '*', 'un envío del formulario crea el lead (con CORS)');
+  let stw = (await call('GET', '/api/state')).json;
+  const marie = stw.leads.find((l) => l.nombre === 'Marie Dupont');
+  ok(marie && marie.canal === 'web' && marie.tipo === 'ext' && marie.auto && marie.interes.includes('5 noches'), 'canal web, extranjero, automático, con su consulta');
+  ok((await fw({ token: WT, nombre: 'Marie', email: 'MARIE@example.fr', mensaje: 'Otra pregunta' })).json.lead === 'existente' && (await call('GET', '/api/state')).json.leads.filter((l) => /marie/i.test(l.nombre)).length === 1, 'el mismo correo no duplica el lead');
+  ok(((await call('GET', `/api/leads/${marie.id}/extra`)).json.notas || []).length === 2, 'los mensajes del formulario quedan como notas');
+  const antesN = (await call('GET', '/api/state')).json.leads.length;
+  ok((await fw({ token: WT, nombre: 'Robot', website: 'http://spam' })).status === 200 && (await call('GET', '/api/state')).json.leads.length === antesN, 'el campo trampa descarta a los robots sin crear lead');
+  ok((await fw({ token: WT })).status === 400, 'un envío sin datos de contacto se rechaza');
+  const fd = new URLSearchParams({ token: WT, nombre: 'Desde HTML', tel: '7123-4567' });
+  const rf = await fetch(BASE + '/api/webhooks/web', { method: 'POST', body: fd });
+  ok(rf.status === 200 && (await call('GET', '/api/state')).json.leads.some((l) => l.nombre === 'Desde HTML' && l.tipo === 'cr'), 'también acepta un formulario HTML normal');
+  const op = await fetch(BASE + '/api/webhooks/web', { method: 'OPTIONS' });
+  ok(op.status === 204 && op.headers.get('access-control-allow-origin') === '*', 'responde la consulta previa de CORS');
+  await call('PATCH', '/api/ajustes', { webActivo: false });
+  ok((await fw({ token: WT, nombre: 'Apagado Web' })).status === 409, 'con el canal web apagado no entra nada');
+  await call('PATCH', '/api/ajustes', { webActivo: true });
+  const wt2 = (await call('POST', '/api/canales/web/token')).json.token;
+  ok(wt2 !== WT && (await fw({ token: WT, nombre: 'Vieja' })).status === 401 && (await fw({ token: wt2, nombre: 'Nueva Clave' })).status === 200, 'al regenerar la clave la anterior deja de servir');
+
+  console.log('Instagram y Facebook directos');
+  const msI = (obj, de, mid, extra = {}, ts = Date.now()) => ({ object: obj, entry: [{ id: obj === 'instagram' ? 'IGID' : 'PAGEID', time: ts, messaging: [{ sender: { id: de }, recipient: { id: 'PAGEID' }, timestamp: ts, message: { mid, ...extra } }] }] });
+  const mst = (await call('GET', '/api/meta/estado')).json;
+  ok(mst.configurado.pageToken && mst.configurado.pageId && mst.webhookUrl.endsWith('/api/webhooks/meta'), 'estado de Instagram y Facebook');
+  ok((await waHook(msI('instagram', 'IGU1', 'm_ig0', { text: 'x' }), { sign: false })).status === 401, 'sin firma se rechaza');
+  const ig = await waHook(msI('instagram', 'IGU1', 'm_ig1', { text: 'Hola, ¿precios para 2 personas?' }));
+  ok(ig.status === 200 && /lead creado \(instagram\)/.test(ig.json.resultado), 'un mensaje de Instagram crea el lead: ' + ig.json?.resultado);
+  stw = (await call('GET', '/api/state')).json;
+  const sofi = stw.leads.find((l) => l.nombre === 'Sofi IG');
+  ok(sofi && sofi.canal === 'instagram' && sofi.chatCanal === 'instagram' && sofi.tieneChat && sofi.esperando && sofi.auto, 'nombre del perfil, canal Instagram y chat propio');
+  ok((await waHook(msI('instagram', 'IGU1', 'm_ig1', { text: 'Hola, ¿precios para 2 personas?' }))).json.resultado.includes('repetido'), 'el mismo mensaje no se duplica');
+  ok(/propio/.test((await waHook(msI('instagram', 'IGU1', 'm_echo', { text: 'eco', is_echo: true }))).json.resultado), 'los ecos de la página se ignoran');
+  const igf = await waHook(msI('instagram', 'IGU1', 'm_ig2', { attachments: [{ type: 'image', payload: { url: 'http://localhost:4010/pub/foto.png' } }] }));
+  ok(igf.status === 200 && /mensaje guardado/.test(igf.json.resultado), 'llega una foto');
+  const chI = (await call('GET', `/api/leads/${sofi.id}/mensajes`)).json;
+  const adjI = chI.mensajes.find((m) => m.adjuntos.length)?.adjuntos[0];
+  ok(chI.canal === 'instagram' && chI.configurado && chI.ventana.abierta && adjI?.url.startsWith('/api/medios/'), 'el chat ofrece responder y la foto se guardó');
+  ok((await fetch(BASE + adjI.url, { headers: { cookie } })).headers.get('content-type') === 'image/png', 'la foto se descarga con sesión');
+  const rpS = await call('POST', `/api/leads/${sofi.id}/mensajes`, { texto: 'Hola Sofi, con gusto' });
+  ok(rpS.status === 201 && socEnviados.at(-1)?.recipient.id === 'IGU1' && socEnviados.at(-1).auth === 'Bearer watok' && socEnviados.at(-1).message.text === 'Hola Sofi, con gusto', 'responder sale por la API de Meta con el token de la página');
+  ok((await call('GET', `/api/leads/${sofi.id}/mensajes`)).json.mensajes.some((m) => m.direccion === 'out' && m.estado === 'enviado'), 'la respuesta queda en el chat');
+  const fb = await waHook(msI('page', 'FBU1', 'm_fb1', { text: 'Buenas tardes' }));
+  ok(/lead creado \(facebook\)/.test(fb.json.resultado) && (await call('GET', '/api/state')).json.leads.find((l) => l.nombre === 'Luis FB')?.canal === 'facebook', 'Facebook Messenger crea su lead');
+  const viejo = Date.now() - 3 * 86400000;
+  await waHook(msI('page', 'FBU2', 'm_fb2', { text: 'Hace días' }, viejo));
+  const lv2 = (await call('GET', '/api/state')).json.leads.find((l) => l.chatCanal === 'facebook' && l.nombre !== 'Luis FB');
+  const cerr = await call('POST', `/api/leads/${lv2.id}/mensajes`, { texto: 'tarde' });
+  ok(cerr.status === 409 && /24 horas/.test(cerr.json.error), 'pasadas 24 horas no se puede responder');
+  await call('PATCH', '/api/ajustes', { metaActivo: false });
+  ok(/desactivados/.test((await waHook(msI('instagram', 'IGU1', 'm_ig9', { text: 'otra' }))).json.resultado) && (await call('POST', `/api/leads/${sofi.id}/mensajes`, { texto: 'x' })).status === 409, 'con el canal apagado no entra ni sale nada');
+  await call('PATCH', '/api/ajustes', { metaActivo: true });
+
+  }
+  if (process.env.LIC_PRIV) {
+    console.log('Licencia de uso');
+    const { sign, createPrivateKey } = await import('node:crypto');
+    const { readFileSync } = await import('node:fs');
+    const key = createPrivateKey(readFileSync(process.env.LIC_PRIV));
+    const mk = (o = {}) => { const p = Buffer.from(JSON.stringify({ v: 1, id: 't1', cliente: 'Hotel Prueba', emitida: '2026-01-01', vence: null, usuarios: 0, ...o })).toString('base64url'); return 'PULSO1.' + p + '.' + sign(null, Buffer.from(p), key).toString('base64url'); };
+    let L = (await call('GET', '/api/state')).json.licencia;
+    ok(L.estado === 'prueba' && L.diasRestantes > 0 && L.puedeEscribir, 'sin licencia corre en prueba de 14 días: ' + L.diasRestantes + ' días');
+    ok((await call('POST', '/api/licencia', { licencia: 'cualquier cosa' })).status === 400, 'un texto cualquiera no es licencia');
+    const buena = mk({ usuarios: 2 });
+    ok((await call('POST', '/api/licencia', { licencia: buena.slice(0, -4) + 'AAAA' })).status === 400, 'una licencia alterada se rechaza');
+    ok((await call('POST', '/api/licencia', { licencia: buena }, { nocookie: true, headers: { cookie: vend } })).status === 403, 'el vendedor no ingresa licencias');
+    const ok1 = await call('POST', '/api/licencia', { licencia: buena });
+    ok(ok1.status === 200 && ok1.json.licencia.estado === 'valida' && ok1.json.licencia.cliente === 'Hotel Prueba', 'una licencia firmada se activa');
+    const tercero = await call('POST', '/api/usuarios', { nombre: 'Tercero', email: 't3@prueba.cr', password: 'otra-clave-123' });
+    ok(tercero.status === 402 && /2 usuarios/.test(tercero.json.error), 'la licencia limita la cantidad de usuarios');
+    ok((await call('POST', '/api/licencia', { licencia: mk({ vence: '2020-01-01' }) })).json.licencia.estado === 'vencida', 'una licencia vencida se reconoce');
+    ok((await call('POST', '/api/leads', { nombre: 'Bloqueado' })).status === 402, 'vencida: no se puede escribir');
+    ok((await call('GET', '/api/state')).status === 200, 'vencida: sí se puede ver todo');
+    const rw = await waHook(waText('50660009999', 'wamid.LIC', 'hola con licencia vencida', 'Cliente Lic'));
+    ok(rw.status === 200, 'vencida: los mensajes de clientes siguen entrando');
+    ok((await call('POST', '/api/licencia', { licencia: mk({ usuarios: 0 }) })).json.licencia.estado === 'valida' && (await call('POST', '/api/leads', { nombre: 'Ya puede' })).status === 201, 'al ingresar una licencia buena vuelve a funcionar');
+  }
 
   console.log(`\n${pass} pruebas bien, ${failN} con fallo`);
   fake.close();

@@ -1,21 +1,23 @@
 import { q } from './db';
 import { uid, hoyCR, digits, toDate } from './util';
-import { getSettings } from './leads';
+import { getSettings, siguienteEtapa, logAct, canalActivo, ETAPA_INICIAL_SQL } from './leads';
 import { detectCanal, normType, pickContact, tipoYPais, type Contacto } from './chatwoot';
 
 const NOMBRE_CANAL: Record<string, string> = {
   whatsapp: 'WhatsApp', web: 'la web', instagram: 'Instagram', facebook: 'Facebook', otro: 'otro canal',
 };
 
-/** Cuando el negocio responde: el lead pasa de Nuevo a Contactado y se anota la atención del día (una vez por día). */
-export async function registrarRespuesta(lead: { id: string; etapa: string; canal: string }) {
+/** Cuando el negocio responde: el lead pasa de la etapa inicial a la siguiente y se anota la atención del día (una vez por día). */
+export async function registrarRespuesta(lead: { id: string; etapa: string; canal: string }, usuario = '') {
   const hoy = hoyCR();
-  if (lead.etapa === 'nuevo') await q("update leads set etapa='contactado', actualizado=now() where id=$1", [lead.id]);
+  const sig = await siguienteEtapa(lead.etapa);
+  if (sig) await q('update leads set etapa=$2, etapa_en=now(), actualizado=now() where id=$1', [lead.id, sig]);
   const ya = await q('select 1 from atenciones where lead_id=$1 and fecha=$2 and auto=true limit 1', [lead.id, hoy]);
   if (!ya.length) {
     await q('insert into atenciones(id, lead_id, fecha, canal, nota, auto) values($1,$2,$3,$4,$5,true)', [
       uid(), lead.id, hoy, lead.canal, 'Se respondió desde la conversación en Pulso CRM.',
     ]);
+    await logAct(lead.id, 'atencion', 'Se respondió al cliente desde la conversación', usuario);
   }
 }
 
@@ -54,8 +56,8 @@ async function buscarOCrear(c: Contacto, canal: string, convId: string, inboxId:
   const s = await getSettings();
   const nombre = c.name || c.phone || c.email || `Contacto de ${NOMBRE_CANAL[canal] || 'Chatwoot'}`;
   const rows = await q(
-    `insert into leads(id, nombre, tel, email, canal, tipo, pais, interes, aviso_dias, creado, auto, cw_contact_id, cw_conversation_id, cw_inbox_id)
-     values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true,$11,$12,$13)
+    `insert into leads(id, nombre, tel, email, canal, tipo, pais, interes, aviso_dias, creado, auto, cw_contact_id, cw_conversation_id, cw_inbox_id, etapa)
+     values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true,$11,$12,$13,${ETAPA_INICIAL_SQL})
      on conflict (cw_contact_id) where cw_contact_id is not null do nothing
      returning *`,
     [uid(), nombre, c.phone, c.email, canal, tipo, pais, texto.slice(0, 500), s.avisoDias, hoyCR(), c.id || null, convId || null, inboxId || null],
@@ -64,6 +66,7 @@ async function buscarOCrear(c: Contacto, canal: string, convId: string, inboxId:
     // Otro aviso llegó al mismo tiempo y ya creó el lead.
     return { lead: (await q('select * from leads where cw_contact_id=$1', [c.id]))[0], creado: false };
   }
+  await logAct(rows[0].id, 'creado', `Lead creado desde ${NOMBRE_CANAL[canal] || 'Chatwoot'} (automático)`);
   return { lead: rows[0], creado: true };
 }
 

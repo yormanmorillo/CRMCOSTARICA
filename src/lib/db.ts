@@ -98,6 +98,86 @@ create table if not exists medios (
   creado timestamptz not null default now()
 );
 create index if not exists medios_lead_idx on medios (lead_id);
+alter table leads add column if not exists etapa_en timestamptz not null default now();
+alter table leads add column if not exists motivo_id text;
+alter table leads add column if not exists motivo_nota text not null default '';
+alter table leads add column if not exists perdido_en timestamptz;
+alter table leads add column if not exists asignado text;
+alter table leads add column if not exists etiquetas jsonb not null default '[]'::jsonb;
+alter table leads add column if not exists destacado boolean not null default false;
+alter table leads add column if not exists empresa text not null default '';
+create table if not exists etapas (
+  clave text primary key,
+  nombre text not null,
+  orden int not null default 0,
+  color text not null default 'accent',
+  tipo text not null default 'abierta'
+);
+insert into etapas(clave, nombre, orden, color, tipo)
+  select * from (values
+    ('nuevo', 'Nuevo', 1, 'accent', 'inicial'),
+    ('contactado', 'Contactado', 2, 'fb', 'abierta'),
+    ('cotizado', 'Cotización enviada', 3, 'warn', 'abierta'),
+    ('negociacion', 'Negociación', 4, 'vio', 'abierta'),
+    ('ganado', 'Ganado', 5, 'ok', 'ganada'),
+    ('perdido', 'Perdido', 6, 'muted', 'perdida')
+  ) v(clave, nombre, orden, color, tipo)
+  where not exists (select 1 from etapas);
+create table if not exists motivos_perdida (
+  id text primary key,
+  nombre text not null,
+  orden int not null default 0,
+  activo boolean not null default true
+);
+insert into motivos_perdida(id, nombre, orden)
+  select * from (values
+    ('m-caro', 'Le pareció muy caro', 1),
+    ('m-competencia', 'Se fue con la competencia', 2),
+    ('m-sin-respuesta', 'Dejó de responder', 3),
+    ('m-fechas', 'Cambió de fechas o de planes', 4),
+    ('m-disponibilidad', 'No había disponibilidad', 5),
+    ('m-info', 'Solo pedía información', 6),
+    ('m-otro', 'Otro motivo', 7)
+  ) v(id, nombre, orden)
+  where not exists (select 1 from motivos_perdida);
+create table if not exists productos (
+  id text primary key,
+  nombre text not null,
+  descripcion text not null default '',
+  precio numeric(14,2) not null default 0,
+  moneda text not null default 'CRC',
+  activo boolean not null default true,
+  creado timestamptz not null default now()
+);
+create table if not exists lead_productos (
+  id text primary key,
+  lead_id text not null references leads(id) on delete cascade,
+  producto_id text,
+  nombre text not null,
+  cantidad numeric(12,2) not null default 1,
+  precio numeric(14,2) not null default 0,
+  moneda text not null default 'CRC',
+  creado timestamptz not null default now()
+);
+create index if not exists lead_productos_lead_idx on lead_productos (lead_id);
+create table if not exists notas (
+  id text primary key,
+  lead_id text not null references leads(id) on delete cascade,
+  usuario text not null default '',
+  usuario_id text,
+  texto text not null,
+  creado timestamptz not null default now()
+);
+create index if not exists notas_lead_idx on notas (lead_id);
+create table if not exists actividad (
+  n bigserial primary key,
+  lead_id text not null references leads(id) on delete cascade,
+  tipo text not null default '',
+  texto text not null default '',
+  usuario text not null default '',
+  creado timestamptz not null default now()
+);
+create index if not exists actividad_lead_idx on actividad (lead_id, n);
 create table if not exists eventos_cw (
   id serial primary key,
   evento text,

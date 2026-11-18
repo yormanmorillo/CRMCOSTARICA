@@ -2,6 +2,7 @@ import { createHmac } from 'node:crypto';
 import { q } from './db';
 import { HttpError, digits, hoyCR, safeEqual, toDate, uid } from './util';
 import { tipoYPais } from './chatwoot';
+import { ETAPA_INICIAL_SQL, canalActivo, logAct } from './leads';
 
 /* ---------- Configuración ---------- */
 export function graphUrl() {
@@ -14,6 +15,15 @@ export function waConfig() {
   const secret = (process.env.META_APP_SECRET || '').trim();
   const verify = (process.env.META_VERIFY_TOKEN || '').trim();
   return { token, phoneId, secret, verify, ok: !!(token && phoneId), recibe: !!(secret && verify) };
+}
+
+/** Instagram y Facebook (Messenger) usan el token de la página de Facebook. */
+export function fbConfig() {
+  const token = (process.env.META_PAGE_TOKEN || '').trim();
+  const pageId = (process.env.META_PAGE_ID || '').trim();
+  const secret = (process.env.META_APP_SECRET || '').trim();
+  const verify = (process.env.META_VERIFY_TOKEN || '').trim();
+  return { token, pageId, secret, verify, ok: !!token, recibe: !!(secret && verify) };
 }
 
 /** Meta firma cada aviso con la clave secreta de la app: X-Hub-Signature-256 = sha256=HMAC(cuerpo). */
@@ -186,13 +196,14 @@ async function buscarOCrearWa(wa: string, nombre: string, texto: string) {
   const { tipo, pais } = tipoYPais({ id: '', name: nombre, phone: tel, email: '', identifier: '', country: '', countryCode: '' });
   const dias = parseInt((await q("select valor from ajustes where clave='avisoDias'"))[0]?.valor, 10);
   const rows = await q(
-    `insert into leads(id, nombre, tel, canal, tipo, pais, interes, aviso_dias, creado, auto, chat_canal, chat_id)
-     values($1,$2,$3,'whatsapp',$4,$5,$6,$7,$8,true,'whatsapp',$9)
+    `insert into leads(id, nombre, tel, canal, tipo, pais, interes, aviso_dias, creado, auto, chat_canal, chat_id, etapa)
+     values($1,$2,$3,'whatsapp',$4,$5,$6,$7,$8,true,'whatsapp',$9,${ETAPA_INICIAL_SQL})
      on conflict (chat_canal, chat_id) where chat_id is not null do nothing
      returning *`,
     [uid(), nombre || tel, tel, tipo, pais, texto.slice(0, 500), Number.isNaN(dias) ? 5 : dias, hoyCR(), wa],
   );
   if (!rows.length) return { lead: (await q("select * from leads where chat_canal='whatsapp' and chat_id=$1", [wa]))[0], creado: false };
+  await logAct(rows[0].id, 'creado', 'Lead creado desde WhatsApp (automático)');
   return { lead: rows[0], creado: true };
 }
 
@@ -250,9 +261,139 @@ async function actualizarEstado(s: any): Promise<string> {
   return `estado ${estado.split(':')[0]}`;
 }
 
-/** Procesa un aviso (webhook) de WhatsApp Cloud API. Devuelve un texto corto para el registro de avisos. */
+/* ---------- Instagram y Facebook Messenger (misma app de Meta, token de la página) ---------- */
+type CanalSocial = 'instagram' | 'facebook';
+
+/** Envía un mensaje por Messenger o Instagram. Devuelve el id del mensaje. Solo se puede responder dentro de las 24 h. */
+export async function enviarSocial(canal: CanalSocial, para: string, texto: string): Promise<string> {
+  const c = fbConfig();
+  if (!c.ok) throw new HttpError(503, 'Instagram y Facebook no están conectados: falta META_PAGE_TOKEN.');
+  let r: Response;
+  try {
+    r = await fetch(`${graphUrl()}/${encodeURIComponent(c.pageId || 'me')}/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${c.token}` },
+      body: JSON.stringify({ recipient: { id: para }, messaging_type: 'RESPONSE', message: { text: texto } }),
+      signal: AbortSignal.timeout(15000),
+    });
+  } catch (e: any) {
+    throw new HttpError(502, `No se pudo contactar a ${canal === 'instagram' ? 'Instagram' : 'Facebook'}: ` + (e?.message || 'sin respuesta'));
+  }
+  const data: any = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const code = Number(data?.error?.code);
+    const msg = code === 190 ? 'El token de la página venció o no es válido. Genera uno nuevo en Meta y cámbialo en META_PAGE_TOKEN.' : data?.error?.message || `respondió ${r.status}`;
+    throw new HttpError(502, `${canal === 'instagram' ? 'Instagram' : 'Facebook'} no aceptó el mensaje: ${msg}`);
+  }
+  return String(data?.message_id || '');
+}
+
+async function nombrePerfil(canal: CanalSocial, id: string): Promise<string> {
+  const c = fbConfig();
+  try {
+    const r = await fetch(`${graphUrl()}/${encodeURIComponent(id)}?fields=${canal === 'instagram' ? 'name,username' : 'name'}`, {
+      headers: { authorization: `Bearer ${c.token}` },
+      signal: AbortSignal.timeout(8000),
+    });
+    const d: any = await r.json().catch(() => ({}));
+    return String(d.name || d.username || '');
+  } catch {
+    return '';
+  }
+}
+
+async function descargarUrl(url: string): Promise<{ mime: string; data: Buffer } | { error: string }> {
+  try {
+    if (!/^https:\/\//.test(url) && !graphUrl().startsWith('http://')) return { error: 'dirección de archivo no válida' };
+    const r = await fetch(url, { signal: AbortSignal.timeout(25000) });
+    if (!r.ok) return { error: 'no se pudo descargar' };
+    const buf = Buffer.from(await r.arrayBuffer());
+    if (buf.length > MAX_MEDIO) return { error: 'el archivo es muy pesado para guardarlo aquí' };
+    return { mime: String(r.headers.get('content-type') || 'application/octet-stream').split(';')[0], data: buf };
+  } catch (e: any) {
+    return { error: e?.message || 'no se pudo descargar' };
+  }
+}
+
+async function recibirSocial(canal: CanalSocial, ev: any): Promise<string> {
+  const de = String(ev?.sender?.id || '');
+  const m = ev?.message;
+  if (!de || !m) return ''; // entregas, lecturas y otros avisos no se guardan
+  if (m.is_echo) return 'ignorado (mensaje propio)';
+  const mid = String(m.mid || '');
+  if (mid && (await q('select 1 from mensajes where meta_id=$1', [mid])).length) return 'mensaje repetido, ignorado';
+
+  let texto = String(m.text || '');
+  const adj: { tipo: string; url: string; nombre: string }[] = [];
+  for (const a of Array.isArray(m.attachments) ? m.attachments : []) {
+    const t = String(a?.type || '');
+    if (t === 'location') {
+      const co = a.payload?.coordinates || {};
+      texto += `${texto ? '\n' : ''}📍 Ubicación\nhttps://maps.google.com/?q=${co.lat},${co.long}`;
+    } else if (a?.payload?.url) {
+      adj.push({ tipo: ['image', 'audio', 'video'].includes(t) ? t : 'document', url: String(a.payload.url), nombre: '' });
+    } else if (t) texto += `${texto ? '\n' : ''}[${t}]`;
+  }
+  if (!texto && !adj.length) return 'ignorado (sin contenido)';
+
+  let lead: any = (await q('select * from leads where chat_canal=$1 and chat_id=$2', [canal, de]))[0];
+  let creado = false;
+  if (!lead) {
+    const etiqueta = canal === 'instagram' ? 'Instagram' : 'Facebook';
+    const nombre = (await nombrePerfil(canal, de)) || `${etiqueta} ${de.slice(-4)}`;
+    const dias = parseInt((await q("select valor from ajustes where clave='avisoDias'"))[0]?.valor, 10);
+    const rows = await q(
+      `insert into leads(id, nombre, canal, interes, aviso_dias, creado, auto, chat_canal, chat_id, etapa)
+       values($1,$2,$3,$4,$5,$6,true,$3,$7,${ETAPA_INICIAL_SQL})
+       on conflict (chat_canal, chat_id) where chat_id is not null do nothing
+       returning *`,
+      [uid(), nombre, canal, texto.slice(0, 500), Number.isNaN(dias) ? 5 : dias, hoyCR(), de],
+    );
+    lead = rows[0] || (await q('select * from leads where chat_canal=$1 and chat_id=$2', [canal, de]))[0];
+    creado = !!rows.length;
+    if (creado) await logAct(lead.id, 'creado', `Lead creado desde ${etiqueta} (automático)`);
+  }
+
+  const adjuntos: any[] = [];
+  for (const a of adj) {
+    const r = await descargarUrl(a.url);
+    if ('error' in r) {
+      texto += `${texto ? '\n' : ''}[No se pudo guardar el archivo: ${r.error}.]`;
+      continue;
+    }
+    const id = uid();
+    await q('insert into medios(id, lead_id, mime, nombre, data) values($1,$2,$3,$4,$5)', [id, lead.id, r.mime, a.nombre, r.data.toString('base64')]);
+    adjuntos.push({ type: a.tipo, url: `/api/medios/${id}`, name: a.nombre, mime: r.mime });
+  }
+  const ins = await q(
+    `insert into mensajes(id, lead_id, meta_id, direccion, texto, autor, adjuntos, creado)
+     values($1,$2,$3,'in',$4,'',$5::jsonb,$6)
+     on conflict do nothing
+     returning id`,
+    [uid(), lead.id, mid || null, texto, JSON.stringify(adjuntos), toDate(Number(ev.timestamp) ? Math.floor(Number(ev.timestamp) / 1000) : undefined)],
+  );
+  if (!ins.length) return 'mensaje repetido, ignorado';
+  return creado ? `lead creado (${canal}) y mensaje guardado` : `mensaje guardado (${canal})`;
+}
+
+async function procesarSocial(p: any): Promise<string> {
+  const canal: CanalSocial = p.object === 'instagram' ? 'instagram' : 'facebook';
+  if (!(await canalActivo('meta'))) return 'ignorado (Instagram y Facebook están desactivados en Admin)';
+  const res: string[] = [];
+  for (const e of Array.isArray(p.entry) ? p.entry : []) {
+    for (const ev of Array.isArray(e.messaging) ? e.messaging : []) {
+      const r = await recibirSocial(canal, ev);
+      if (r) res.push(r);
+    }
+  }
+  return res.length ? res.join('; ') : 'sin mensajes';
+}
+
+/** Procesa un aviso (webhook) de Meta: WhatsApp, Instagram o Facebook. Devuelve un texto corto para el registro de avisos. */
 export async function procesarMeta(p: any): Promise<string> {
+  if (p?.object === 'page' || p?.object === 'instagram') return procesarSocial(p);
   if (p?.object !== 'whatsapp_business_account') return `ignorado (${p?.object || 'sin tipo'})`;
+  if (!(await canalActivo('whatsapp'))) return 'ignorado (WhatsApp directo está desactivado en Admin)';
   const mi = waConfig().phoneId;
   const res: string[] = [];
   for (const e of Array.isArray(p.entry) ? p.entry : []) {

@@ -9,7 +9,7 @@ Cliente → WhatsApp → Meta (WhatsApp Business Platform) ──aviso──▶ 
 
 En Pulso CRM, la pestaña **Conversaciones** (en el teléfono, **Chats**) muestra la lista de chats y el hilo de cada uno. El lead se crea solo con el primer mensaje, las fotos y audios del cliente se guardan, y se responde desde la misma pantalla.
 
-> **Aviso importante.** Esta guía está escrita de memoria sobre cómo funciona Meta, y sus pantallas cambian seguido. El código de Pulso CRM está probado con mensajes simulados que siguen el formato de Meta, **pero todavía no se ha probado contra una cuenta real de Meta**. La primera conexión puede pedir algún ajuste. Si algo no coincide, usa la documentación oficial de Meta ("WhatsApp Business Platform, Cloud API") y pídeme ayuda con lo que veas en Ajustes, "Últimos avisos de WhatsApp".
+> **Aviso importante.** Esta guía está escrita de memoria sobre cómo funciona Meta, y sus pantallas cambian seguido. El código de Pulso CRM está probado con mensajes simulados que siguen el formato de Meta, **pero todavía no se ha probado contra una cuenta real de Meta**. La primera conexión puede pedir algún ajuste. Si algo no coincide, usa la documentación oficial de Meta ("WhatsApp Business Platform, Cloud API") y pídeme ayuda con lo que veas en Admin, Canales, "Últimos avisos".
 
 ## Qué necesitas
 
@@ -45,12 +45,12 @@ Además inventa tú una cuarta: **`META_VERIFY_TOKEN`**, un texto largo al azar 
 
 **Si está en tu servidor:** edita el archivo `.env` y ejecuta `docker compose up -d` (o `docker compose -f docker-compose.solo.yml up -d` si usas la instalación liviana, ver más abajo).
 
-Luego abre Pulso CRM, **Ajustes, WhatsApp**: deben salir 4 marcas verdes. Toca **Probar la conexión**: si el token y el id son correctos, muestra el número conectado.
+Luego abre Pulso CRM, **Admin, Canales, WhatsApp**: deben salir 4 marcas verdes. Toca **Probar la conexión**: si el token y el id son correctos, muestra el número conectado.
 
 ## Paso 4. Decirle a Meta dónde enviar los mensajes
 
 1. En Meta: tu app, **WhatsApp, Configuración (Configuration), Webhook, Editar**.
-2. **URL de devolución de llamada:** copia la dirección que muestra Pulso CRM en Ajustes, WhatsApp (termina en `/api/webhooks/meta`).
+2. **URL de devolución de llamada:** copia la dirección que muestra Pulso CRM en Admin, Canales (termina en `/api/webhooks/meta`).
 3. **Token de verificación:** copia el que también muestra ahí (es tu `META_VERIFY_TOKEN`).
 4. Toca **Verificar y guardar**. Si falla, revisa que hayas hecho el Paso 3 y el redeploy.
 5. En la lista de campos del webhook, **suscríbete a `messages`**.
@@ -61,7 +61,7 @@ Luego abre Pulso CRM, **Ajustes, WhatsApp**: deben salir 4 marcas verdes. Toca *
 2. En unos segundos aparece el chat en la pestaña **Conversaciones** y el lead en **Leads** (marcado "Automático"). Revisa que el tipo (costarricense o extranjero) esté bien: se adivina por el prefijo del teléfono.
 3. Responde desde Pulso CRM. En el celular del cliente debe llegar el mensaje, y en el chat verás "Enviado", "Entregado" y "Leído".
 
-Si el mensaje no aparece: Ajustes, "Últimos avisos de WhatsApp". Si ahí no llega nada, Meta no está logrando llamar a tu dirección (revisa el Paso 4 y que la app esté en modo **Live** y no en desarrollo, que es lo que Meta exige para recibir mensajes de clientes reales; para pasarla a Live Meta pide, entre otras cosas, una dirección de política de privacidad). En algunas cuentas hay que suscribir la app a la cuenta de WhatsApp Business además de marcar el campo `messages`: la documentación de Meta lo llama `subscribed_apps`.
+Si el mensaje no aparece: Admin, Canales, "Últimos avisos". Si ahí no llega nada, Meta no está logrando llamar a tu dirección (revisa el Paso 4 y que la app esté en modo **Live** y no en desarrollo, que es lo que Meta exige para recibir mensajes de clientes reales; para pasarla a Live Meta pide, entre otras cosas, una dirección de política de privacidad). En algunas cuentas hay que suscribir la app a la cuenta de WhatsApp Business además de marcar el campo `messages`: la documentación de Meta lo llama `subscribed_apps`.
 
 ## Cómo se comporta
 
@@ -69,9 +69,9 @@ Si el mensaje no aparece: Ajustes, "Últimos avisos de WhatsApp". Si ahí no lle
 - **Fotos, audios, videos y documentos** que manda el cliente se descargan y se guardan en la base de datos, hasta 4 MB cada uno (Meta borra sus copias a los pocos días). Si uno pesa más o la descarga falla, el mensaje igual queda guardado con un aviso para abrirlo en WhatsApp.
 - **Ubicaciones, contactos y botones** llegan como texto. Las reacciones (👍) se ignoran.
 - **Regla de las 24 horas.** WhatsApp solo deja responder libremente durante las 24 horas siguientes al último mensaje del cliente. Pasado ese tiempo, Pulso CRM bloquea el cuadro de respuesta y lo explica. Escribirle primero a alguien, o después de las 24 horas, requiere una *plantilla* aprobada por Meta, y **Pulso CRM todavía no envía plantillas**.
-- **Al responder:** el lead pasa de Nuevo a Contactado y se anota la atención del día (una sola vez por día).
+- **Al responder:** el lead pasa de la etapa inicial a la siguiente (por defecto, de Nuevo a Contactado) y se anota la atención del día (una sola vez por día).
 - **Seguridad.** Pulso CRM rechaza cualquier aviso que no traiga la firma correcta de Meta (`X-Hub-Signature-256`, calculada con tu clave secreta). Los archivos de los clientes solo se ven con sesión iniciada.
-- **Aún no incluye:** enviar fotos o archivos desde el CRM al cliente, plantillas, Instagram ni Messenger. Instagram y Messenger usan el mismo mecanismo de Meta y son el siguiente paso.
+- **Aún no incluye:** enviar fotos o archivos desde el CRM al cliente ni plantillas. Instagram y Messenger ya están (ver [ADMIN.md](ADMIN.md)).
 
 ## Instalación liviana en tu propio servidor (sin Chatwoot)
 
