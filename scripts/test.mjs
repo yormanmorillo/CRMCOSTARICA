@@ -631,6 +631,25 @@ const msg = (o) => ({
     ok(mv.status === 200 && mv.json.lead.etapa === 'en-pausa', 'un lead se puede mover a En pausa');
     await call('DELETE', `/api/etapas/en-pausa`);
   }
+  {
+    console.log('Reportes');
+    const rp = await call('GET', '/api/reportes');
+    ok(rp.status === 200 && rp.json.kpis && Array.isArray(rp.json.serie) && Array.isArray(rp.json.embudo) && Array.isArray(rp.json.porCanal), 'los reportes devuelven resumen, tendencia, embudo y canales');
+    ok(rp.json.kpis.nuevos >= 10 && rp.json.porCanal.reduce((s, c) => s + c.nuevos, 0) === rp.json.kpis.nuevos, 'los leads por canal suman los leads nuevos');
+    ok(rp.json.embudo.length >= 3 && rp.json.embudo[0].llegaron >= rp.json.embudo[rp.json.embudo.length - 1].llegaron, 'el embudo baja de la primera a la última etapa');
+    ok((await call('GET', '/api/reportes?desde=2020-01-01&hasta=2020-01-31')).json.kpis.nuevos === 0, 'un rango sin datos da ceros');
+    ok((await call('GET', '/api/reportes?desde=mal')).status === 400, 'fechas inválidas se rechazan');
+    const rg = await call('POST', '/api/leads', { nombre: 'Venta para reporte', canal: 'whatsapp' });
+    await call('POST', `/api/leads/${rg.json.lead.id}/productos`, { nombre: 'Paquete X', cantidad: 2, precio: 50, moneda: 'USD' });
+    await call('PATCH', `/api/leads/${rg.json.lead.id}`, { etapa: 'ganado' });
+    const rp2 = (await call('GET', '/api/reportes')).json;
+    ok(rp2.kpis.ventas.USD >= 100 && rp2.productos.some((p) => p.nombre === 'Paquete X' && p.total === 100), 'una venta ganada suma a las ventas y a los productos más vendidos');
+    ok((await call('GET', '/api/reportes', undefined, { nocookie: true, headers: { cookie: vend } })).status === 200, 'el vendedor (con permiso) ve los reportes');
+    await call('PATCH', '/api/roles/vendedor', { permisos: ['ver_todos', 'eliminar_leads'] });
+    await new Promise((r) => setTimeout(r, 15500));
+    ok((await call('GET', '/api/reportes', undefined, { nocookie: true, headers: { cookie: vend } })).status === 403, 'quitando el permiso, el reporte se bloquea');
+    await call('PATCH', '/api/roles/vendedor', { permisos: ['ver_todos', 'eliminar_leads', 'reportes'] });
+  }
   if (process.env.LIC_PRIV) {
     console.log('Licencia de uso');
     const { sign, createPrivateKey } = await import('node:crypto');

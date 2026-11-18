@@ -13,6 +13,7 @@ import './api-admin';
 import './api-canales';
 import './api-demo';
 import './api-correo';
+import './api-reportes';
 
 export { dispatch } from './router';
 
