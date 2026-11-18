@@ -12,7 +12,7 @@ Entra a Pulso CRM como administrador y toca **Admin** (arriba a la derecha). Los
 | **Motivos de pérdida** | Lista de razones ("le pareció caro", "se fue con la competencia"…). Al pasar un lead a una etapa de tipo perdido el sistema pide el motivo (y un detalle opcional). Un motivo ya usado se puede ocultar pero no borrar. |
 | **Productos** | Catálogo de lo que vendes (precio en colones o dólares). Se agrega a cada lead desde su ficha; el lead guarda el precio con que se cotizó. |
 | **Usuarios** | Alta, cambio de rol y de contraseña, baja. Respeta el máximo de usuarios de la licencia. |
-| **Imágenes** | Galería de las fotos adjuntas a leads y las que mandaron los clientes por chat, con borrado. |
+| **Imágenes** | Espacio usado, galería de las fotos adjuntas a leads y las del chat, y limpieza automática (ver abajo). |
 | **Leads perdidos** | Cuántos y por qué no se concretaron, con valor perdido; filtro por motivo. |
 | **Licencia** | Estado y campo para pegar la licencia de uso. |
 
@@ -43,3 +43,15 @@ node scripts/licencia.mjs ver PULSO1....  # revisar una licencia
 3. Emite una licencia por cliente y pégala en Admin, Licencia.
 
 **Límite honesto:** como el cliente tiene el código y la base de datos, una persona con conocimientos podría quitar la verificación. Esto sirve como control comercial y disuasivo, no como protección infalible; si necesitas más, hace falta un servicio de licencias en línea o venderlo como servicio alojado por ti.
+
+
+## Que las imágenes y documentos no llenen el servidor
+
+- Las fotos que mandan los clientes por chat se **reducen al guardarse** (máx. 1600 px, JPEG) cuando el servidor tiene `sharp`; las que sube el equipo ya se reducen en el navegador. Tope de 4 MB por archivo.
+- En **Admin → Imágenes** se ve cuánto espacio ocupan y se elige borrar los archivos del **chat** con más de 30, 90, 180 días o 1 año (por defecto 180). La limpieza corre sola, como mucho una vez por hora, mientras alguien usa el sistema; también hay un botón «Limpiar ahora». Los mensajes se conservan y muestran «Archivo eliminado para ahorrar espacio».
+- Los adjuntos que el equipo sube a un lead **nunca** se borran solos.
+- Si el volumen de archivos crece mucho, la salida escalable es guardarlos en un almacenamiento de objetos (S3, Cloudflare R2) en vez de la base de datos; con la limpieza activa, un negocio normal no lo necesita.
+
+## Avance del lead (roadmap)
+
+Cada lead muestra arriba de su ficha una línea con las etapas del proceso: las ya recorridas (con fecha y días en cada una), la actual, las pendientes y el porcentaje de avance. Tocar una etapa mueve el lead. El tablero muestra una barra de avance en cada tarjeta. El historial se guarda automáticamente en cada cambio de etapa.

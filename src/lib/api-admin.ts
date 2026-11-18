@@ -1,3 +1,4 @@
+import { usoAlmacen, limpiarMedios } from './almacen';
 import { q } from './db';
 import { HttpError, json, uid, str } from './util';
 import { loadLead, getEtapas, logAct, COLORES, TIPOS_ETAPA, MONEDAS } from './leads';
@@ -15,12 +16,13 @@ const mapItem = (r: any) => ({ id: r.id, productoId: r.producto_id || '', nombre
 
 route('GET', '/leads/:id/extra', async ({ params }) => {
   await mustLead(params.id);
-  const [notas, items, act] = await Promise.all([
+  const [notas, items, act, etapas] = await Promise.all([
     q('select id, usuario, usuario_id, texto, creado from notas where lead_id=$1 order by creado desc', [params.id]),
     q('select id, producto_id, nombre, cantidad, precio, moneda from lead_productos where lead_id=$1 order by creado', [params.id]),
     q('select n, tipo, texto, usuario, creado from actividad where lead_id=$1 order by n desc limit 80', [params.id]),
+    q('select n, etapa, entrada from lead_etapas where lead_id=$1 order by n', [params.id]),
   ]);
-  return json({ notas, productos: items.map(mapItem), actividad: act });
+  return json({ notas, productos: items.map(mapItem), actividad: act, etapas });
 });
 
 route('POST', '/leads/:id/notas', async ({ req, params, user }) => {
@@ -288,4 +290,15 @@ route('DELETE', '/medios/:id', async ({ params }) => {
   if (!r) throw new HttpError(404, 'Archivo no encontrado');
   await q("update mensajes set adjuntos = (select coalesce(jsonb_agg(e), '[]'::jsonb) from jsonb_array_elements(adjuntos) e where e->>'url' <> $1) where lead_id=$2", ['/api/medios/' + params.id, r.lead_id]);
   return json({ ok: true });
+}, { admin: true });
+
+/* ---------- Espacio usado por imágenes y archivos ---------- */
+route('GET', '/admin/almacenamiento', async () => json(await usoAlmacen()), { admin: true });
+route('POST', '/admin/almacenamiento/limpiar', async ({ req }) => {
+  const b = await body(req);
+  const dias = Number(b.dias);
+  if (!Number.isInteger(dias) || dias < 0 || dias > 3650) throw new HttpError(400, 'Días no válidos');
+  if (dias === 0 && b.confirmar !== true) throw new HttpError(400, 'Confirma que quieres borrar todas las imágenes del chat');
+  const r = await limpiarMedios(dias);
+  return json({ ...r, uso: await usoAlmacen() });
 }, { admin: true });

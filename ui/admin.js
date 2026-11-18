@@ -109,15 +109,25 @@ function archCard(a){
 }
 SEC.archivos=function(out,ok){
   AD.arch.items=[];
-  return api('GET','/admin/archivos?origen='+AD.arch.origen+'&limit=48&offset=0').then(function(r){
+  return Promise.all([api('GET','/admin/archivos?origen='+AD.arch.origen+'&limit=48&offset=0'),api('GET','/admin/almacenamiento').catch(function(){return null})]).then(function(rs){
     if(!ok())return;
-    AD.arch.items=r.items;AD.arch.total=r.total;
+    AD.arch.items=rs[0].items;AD.arch.total=rs[0].total;AD.stor=rs[1];
     out(archHtml());
   });
 };
+function mb(b){return b>=1073741824?(b/1073741824).toFixed(2)+' GB':(b>=1048576?(b/1048576).toFixed(1)+' MB':(b<=0?'0 KB':Math.max(1,Math.round(b/1024))+' KB'))}
+function storHtml(){
+  var u=AD.stor;if(!u)return '';
+  var r=u.retencionDias;
+  return '<div class="card"><h2>Espacio usado</h2><p class="sub">Las fotos que llegan por chat se reducen automáticamente al guardarse. Las que subes a un lead no se borran solas.</p>'+
+    '<div class="stor"><div><b>'+mb(u.chat.bytes)+'</b><small>'+pl(u.chat.n,'archivo del chat','archivos del chat')+'</small></div><div><b>'+mb(u.adjuntos.bytes)+'</b><small>'+pl(u.adjuntos.n,'adjunto de leads','adjuntos de leads')+'</small></div>'+(u.base!=null?'<div><b>'+mb(u.base)+'</b><small>base de datos total</small></div>':'')+'</div>'+
+    '<div class="fg"><label class="fl">Borrar archivos del chat con más de<select class="in" data-adm="retencion">'+[[0,'Nunca (conservar todo)'],[30,'30 días'],[90,'90 días'],[180,'180 días'],[365,'1 año']].map(function(o){return '<option value="'+o[0]+'"'+(o[0]===r?' selected':'')+'>'+o[1]+'</option>'}).join('')+'</select></label></div>'+
+    '<p class="btns" style="margin:12px 0 0"><button class="btn" data-action="stor-limpiar" data-d="'+(r||90)+'">Limpiar ahora'+(r?' (más de '+r+' días)':'')+'</button></p>'+
+    '<small class="muted" style="display:block;margin-top:8px">Los mensajes se conservan; solo se quita el archivo y el chat muestra «Archivo eliminado».</small></div>';
+}
 function archHtml(){
   var A=AD.arch;
-  return '<div class="card"><h2>Imágenes cargadas <span class="muted" style="font-size:13px;font-weight:500">'+A.total+'</span></h2><p class="sub">Fotos que subiste a los leads y las que los clientes enviaron por chat.</p>'+
+  return storHtml()+'<div class="card"><h2>Imágenes cargadas <span class="muted" style="font-size:13px;font-weight:500">'+A.total+'</span></h2><p class="sub">Fotos que subiste a los leads y las que los clientes enviaron por chat.</p>'+
     '<label class="fl" style="max-width:260px;margin-bottom:12px">Mostrar<select class="in" data-adm="arch-f"><option value="todas"'+(A.origen==='todas'?' selected':'')+'>Todas</option><option value="lead"'+(A.origen==='lead'?' selected':'')+'>Adjuntas a leads</option><option value="chat"'+(A.origen==='chat'?' selected':'')+'>Recibidas por chat</option></select></label>'+
     (A.items.length?'<div class="gal" id="gal">'+A.items.map(archCard).join('')+'</div>'+(A.items.length<A.total?'<p style="text-align:center;margin:14px 0 0"><button class="btn" data-action="ar-mas">Cargar más</button></p>':''):'<p class="muted">No hay imágenes todavía.</p>')+'</div>';
 }
@@ -163,6 +173,7 @@ window.adminAct=function(a,el,id){
     case 'us-del':if(armed(el,'¿Eliminar?'))api('DELETE','/usuarios/'+k).then(admSync).then(admRender).catch(admErr);break;
     case 'ar-ver':$('#lbImg').src=el.dataset.url;$('#lbImg').alt=el.dataset.n;$('#lbCap').textContent=el.dataset.n;showOv('lbOv');break;
     case 'ar-del':if(armed(el,'¿Borrar?'))api('DELETE',(el.dataset.o==='chat'?'/medios/':'/archivos/')+id).then(function(){AD.arch.items=AD.arch.items.filter(function(x){return x.id!==id});AD.arch.total--;admBody(archHtml());return admSync()}).catch(fail);break;
+    case 'stor-limpiar':{var dd=Number(el.dataset.d)||90;if(!armed(el,'¿Seguro? Se borran'))break;api('POST','/admin/almacenamiento/limpiar',{dias:dd}).then(function(r){AD.stor=r.uso;toast(pl(r.borrados,'archivo borrado','archivos borrados')+' · '+mb(r.bytes)+' liberados');admRender()}).catch(fail);break}
     case 'ar-mas':api('GET','/admin/archivos?origen='+AD.arch.origen+'&limit=48&offset='+AD.arch.items.length).then(function(r){AD.arch.items=AD.arch.items.concat(r.items);AD.arch.total=r.total;admBody(archHtml())}).catch(fail);break;
   }
 };
@@ -173,6 +184,7 @@ window.adminChange=function(el){
     api('PATCH','/ajustes',b).then(admSync).then(function(){toast(el.checked?'Canal activado':'Canal desactivado');admRender()}).catch(admErr);
     return true;
   }
+  if(d.adm==='retencion'){api('PATCH','/ajustes',{retencionDias:Number(el.value)}).then(function(){AD.stor.retencionDias=Number(el.value);toast('Guardado');admRender()}).catch(admErr);return true}
   if(d.adm==='arch-f'){AD.arch.origen=el.value;admRender();return true}
   if(d.adm==='pf'){AD.pf=el.value;admRender();return true}
   if(d.adm){

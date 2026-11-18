@@ -95,7 +95,7 @@ var autoTag=function(l){return l.auto?'<span class="tag" title="Se creó sola cu
 /* ---------- Estado de interfaz ---------- */
 var view='panel',openId=null,syncing=false,loaded=false,sig='';
 var F={q:'',canal:'',tipo:'',etapa:'',asig:'',vista:'lista'};
-var X={id:null,notas:[],productos:[],actividad:[]};
+var X={id:null,notas:[],productos:[],actividad:[],etapas:[]};
 var AD={sec:'negocio'};
 var C={y:parse(today()).getFullYear(),m:parse(today()).getMonth(),sel:today()};
 var ibId=null,IB={f:'todas',q:'',c:'',orden:'reciente',mios:false};
@@ -249,7 +249,13 @@ function kcard(l){
       '<span>'+(dias===0?'Hoy en esta etapa':pl(dias,'día','días')+' en etapa')+'</span></div>'+
     (l.interes?'<div class="sub2" title="'+esc(l.interes)+'">“'+esc(l.interes)+'”</div>':'')+
     ((l.etiquetas||[]).length?'<div class="r">'+tagsHtml(l,3)+((l.etiquetas.length>3)?'<span class="tagp">+'+(l.etiquetas.length-3)+'</span>':'')+'</div>':'')+
+    miniRoad(l)+
     (aviso?'<div class="foot">'+aviso+'</div>':'')+'</div>';
+}
+function miniRoad(l){
+  var p=roadPasos(l),n=p.length,i=0;p.forEach(function(e,k){if(e.clave===l.etapa)i=k});
+  var pct=tipoE(l.etapa)==='ganada'?100:(n>1?Math.round(i/(n-1)*100):0);
+  return '<div class="kbar" title="Avance: '+pct+'%"><i style="width:'+pct+'%;background:'+(esPerdido(l)?'var(--crit)':(tipoE(l.etapa)==='ganada'?'var(--ok)':'var(--accent)'))+'"></i></div>';
 }
 
 /* ---------- Calendario ---------- */
@@ -316,7 +322,7 @@ function setView(v){
   if(vistas.indexOf(v)<0||(v==='admin'&&S.me.rol!=='admin'))v='panel';
   view=v;document.body.dataset.view=v;
   vistas.forEach(function(x){$('#v-'+x).hidden=x!==v});
-  $$('.tabs button').forEach(function(b){if(b.dataset.view===v)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
+  $$('.snav button').forEach(function(b){if(b.dataset.view===v)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
   renderAll();
 }
 /* ---------- Pestaña Conversaciones: la bandeja de Pulso CRM ---------- */
@@ -403,12 +409,13 @@ function optHtml(arr,v){return arr.map(function(x){return '<option value="'+esc(
 var etapaOpts=function(v){return ETAPAS.map(function(e){return [e.clave,e.nombre]})};
 function openLead(id){
   var l=lead(id);if(!l)return;
-  openId=id;X={id:id,notas:[],productos:[],actividad:[]};
+  openId=id;X={id:id,notas:[],productos:[],actividad:[],etapas:[]};
   var chat=l.tieneChat?
     '<section id="sec-chat"><h3>Conversación</h3><div class="chat" id="chatBox"><p class="muted" style="margin:0">Cargando mensajes…</p></div>'+
       '<form class="reply" data-form="reply"><textarea class="in" id="replyText" name="texto" rows="2" placeholder="Escribe tu respuesta" aria-label="Respuesta" required></textarea><button class="btn primary" type="submit" id="replyBtn">Enviar</button></form>'+
       '<small id="replyHint" style="display:block;margin-top:6px"></small></section>':'';
   $('#drBody').innerHTML=
+    '<section id="sec-road"><h3>Avance del lead</h3><div id="drRoad"></div></section>'+
     '<div class="acts" id="drActs"><button class="btn sm" data-action="dr-go" data-t="sec-prod" data-f="prodSel">+ Producto</button><button class="btn sm" data-action="dr-go" data-t="sec-task" data-f="tkTitulo">Tarea</button><button class="btn sm" data-action="dr-go" data-t="sec-att" data-f="attNota" data-canal="llamada">Registrar llamada</button><button class="btn sm" data-action="dr-go" data-t="sec-nota" data-f="notaText">Nota</button>'+
       (l.tieneChat?'<button class="btn sm" data-action="dr-go" data-t="sec-chat" data-f="replyText">Mensaje</button>':'')+
       '<button class="btn sm" data-action="dr-go" data-t="sec-datos" data-f="tagIn">Etiquetas</button></div>'+
@@ -439,7 +446,7 @@ function openLead(id){
     '<section id="sec-act"><h3>Línea de tiempo</h3><div id="drAct"></div></section>'+
     '</div>'+
     '<section id="sec-del"><button class="btn danger" type="button" data-action="del-lead">Eliminar este lead</button></section>';
-  renderDrHead();renderDrData();renderDrTags();renderDrProd();renderDrRem();renderDrAtt();renderDrNotas();renderDrTasks();renderDrFiles();renderDrAct();
+  renderDrHead();renderDrData();renderDrTags();renderDrProd();renderDrRem();renderDrAtt();renderDrNotas();renderDrTasks();renderDrFiles();renderDrAct();renderDrRoad();
   showOv('drawerOv');
   $('#drBody').scrollTop=0;
   var cb=$('#drHead .btn');if(cb)cb.focus();
@@ -449,10 +456,10 @@ function openLead(id){
 function loadExtra(id){
   return api('GET','/leads/'+id+'/extra').then(function(r){
     if(openId!==id)return;
-    X={id:id,notas:r.notas||[],productos:r.productos||[],actividad:r.actividad||[]};
+    X={id:id,notas:r.notas||[],productos:r.productos||[],actividad:r.actividad||[],etapas:r.etapas||[]};
     var ae=document.activeElement;
     if(!(ae&&ae.closest&&ae.closest('#drProdList')))renderDrProd();
-    renderDrNotas();renderDrAct();
+    renderDrNotas();renderDrAct();renderDrRoad();
   }).catch(function(){});
 }
 function renderDrHead(){
@@ -501,6 +508,47 @@ function renderDrNotas(){
   }).join('');
 }
 var ACT_T={creado:'Creado',etapa:'Etapa',ganado:'Ganado',perdido:'Perdido',nota:'Nota',producto:'Producto',atencion:'Atención',asignado:'Asignación',mensaje:'Mensaje'};
+function roadPasos(l){
+  var perd=esPerdido(l);
+  var pasos=ETAPAS.filter(function(e){return e.tipo!=='perdida'&&!(perd&&e.tipo==='ganada')});
+  if(perd){var pe=ETAPAS.filter(function(e){return e.clave===l.etapa})[0];if(pe)pasos.push(pe)}
+  return pasos;
+}
+function roadInfo(l){
+  var pasos=roadPasos(l),h=X.etapas||[],now=Date.now();
+  if(!h.length&&l.etapaEn)h=[{etapa:l.etapa,entrada:l.etapaEn}];
+  var info={};
+  h.forEach(function(r,i){
+    var ini=new Date(r.entrada).getTime(),fin=h[i+1]?new Date(h[i+1].entrada).getTime():now;
+    var o=info[r.etapa]=info[r.etapa]||{entrada:r.entrada,ms:0};
+    o.ms+=Math.max(0,fin-ini);
+  });
+  var cur=0;pasos.forEach(function(e,i){if(e.clave===l.etapa)cur=i});
+  return {pasos:pasos,info:info,cur:cur};
+}
+function renderDrRoad(){
+  var el=$('#drRoad');if(!el)return;
+  var l=lead(openId);if(!l)return;
+  var R=roadInfo(l),n=R.pasos.length,perd=esPerdido(l),gan=tipoE(l.etapa)==='ganada';
+  var pct=gan?100:(n>1?Math.round(R.cur/(n-1)*100):0);
+  if(perd)pct=Math.round(R.cur/Math.max(1,n-1)*100);
+  var dias=function(ms){var d=Math.round(ms/86400000);return d<1?'menos de 1 día':pl(d,'día','días')};
+  var pasos=R.pasos.map(function(e,i){
+    var st=i<R.cur?'done':(i===R.cur?'cur':'next'),o=R.info[e.clave],lost=e.tipo==='perdida';
+    var sub=o?(fmt(String(o.entrada).slice(0,10))+(st==='cur'&&!gan&&!lost?' · '+dias(o.ms):(st==='done'?' · '+dias(o.ms):''))):(st==='done'?'Sin registro':'Pendiente');
+    var can=st!=='cur';
+    return '<li class="rp '+st+(lost?' lost':'')+'" style="--c:var(--'+esc(e.color)+')"><button type="button" '+(can?'data-action="road-go" data-e="'+esc(e.clave)+'" title="Mover el lead a '+esc(e.nombre)+'"':'disabled aria-current="step"')+'><span class="dot">'+(st==='done'?'✓':(lost?'✕':(gan&&st==='cur'?'★':(i+1))))+'</span><b>'+esc(e.nombre)+'</b><small>'+esc(sub)+'</small></button></li>';
+  }).join('');
+  var tk=S.tasks.filter(function(k){return k.leadId===l.id&&!k.hecha}).sort(function(a,b){return (a.fecha||'')<(b.fecha||'')?-1:1})[0];
+  var cur=R.pasos[R.cur],oc=cur&&R.info[cur.clave];
+  var res=[];
+  if(l.llegada)res.push('Llegada: <b>'+esc(fmt(l.llegada))+'</b>');
+  if(tk)res.push('Próxima tarea: <b>'+esc(tk.titulo)+'</b> · '+esc(fmt(tk.fecha)));
+  else if(!perd&&!gan)res.push('<span style="color:var(--warn)">Sin tarea pendiente: agenda el siguiente paso</span>');
+  el.innerHTML='<div class="road-top"><div class="road-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+pct+'"><i style="width:'+pct+'%;background:'+(perd?'var(--crit)':(gan?'var(--ok)':'var(--accent)'))+'"></i></div><b>'+pct+'%</b></div>'+
+    '<ol class="road">'+pasos+'</ol>'+
+    '<div class="road-foot">'+(oc&&!gan?'<span>Lleva <b>'+esc(dias(oc.ms))+'</b> en «'+esc(cur.nombre)+'»</span>':'')+res.map(function(x){return '<span>'+x+'</span>'}).join('')+'</div>';
+}
 function renderDrAct(){
   var el=$('#drAct');if(!el)return;
   var a=X.actividad||[];
@@ -563,6 +611,7 @@ function renderDrFiles(){
 /* ---------- Conversación (mensajes de WhatsApp u otros canales) ---------- */
 var urlOk=function(u){return /^https?:\/\//.test(u)||/^\/api\/medios\/[a-f0-9]+$/.test(u)};
 function adjHtml(a){
+  if(a&&a.borrado)return '<small class="muted"><i>Archivo eliminado para ahorrar espacio</i></small>';
   if(!a||!urlOk(a.url))return '';
   var u=esc(a.url),n=esc(a.name||'');
   if(a.type==='image')return '<a href="'+u+'" target="_blank" rel="noopener"><img src="'+u+'" alt="'+(n||'Imagen')+'" loading="lazy"></a>';
@@ -696,6 +745,7 @@ function act(a,el){
     case 'ib-canal':IB.c=el.dataset.c;renderInboxList();break;
     case 'ib-mios':IB.mios=!IB.mios;renderInboxList();break;
     case 'ib-limpiar':IB.f='todas';IB.c='';IB.mios=false;IB.q='';IB.orden='reciente';{var qi=$('#ibq');if(qi)qi.value=''}renderInboxList();break;
+    case 'road-go':moveEtapa(openId,el.dataset.e);break;
     case 'star':{var ls=lead(openId);if(ls)api('PATCH','/leads/'+openId,{destacado:!ls.destacado}).then(function(r){put(r.lead);renderDrHead();renderAll()}).catch(fail);break}
     case 'dr-go':{var tg=document.getElementById(el.dataset.t);if(tg){tg.scrollIntoView({block:'start',behavior:'smooth'});if(el.dataset.canal){var ac=$('#attCanal');if(ac)ac.value=el.dataset.canal}var ff=document.getElementById(el.dataset.f);if(ff)setTimeout(function(){ff.focus({preventScroll:true})},250)}break}
     case 'tag-del':{var lt=lead(openId);if(lt){var nt=lt.etiquetas.filter(function(_,i){return i!==parseInt(el.dataset.i,10)});api('PATCH','/leads/'+openId,{etiquetas:nt}).then(function(r){put(r.lead);renderDrTags();renderAll()}).catch(fail)}break}

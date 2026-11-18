@@ -486,6 +486,30 @@ const msg = (o) => ({
   await call('PATCH', '/api/ajustes', { metaActivo: true });
 
   }
+  {
+    console.log('Roadmap del lead y almacenamiento');
+    const rl = await call('POST', '/api/leads', { nombre: 'Lead Roadmap', canal: 'web' });
+    const rid = rl.json.lead.id;
+    let ex = (await call('GET', `/api/leads/${rid}/extra`)).json;
+    ok(Array.isArray(ex.etapas) && ex.etapas.length === 1, 'un lead nuevo ya tiene su primera etapa en el historial');
+    await call('PATCH', `/api/leads/${rid}`, { etapa: 'ganado' });
+    await call('PATCH', `/api/leads/${rid}`, { nombre: 'Lead Roadmap 2' });
+    ex = (await call('GET', `/api/leads/${rid}/extra`)).json;
+    ok(ex.etapas.length === 2 && ex.etapas[1].etapa === 'ganado', 'cada cambio de etapa se anota una sola vez (editar otros datos no suma)');
+    const u0 = await call('GET', '/api/admin/almacenamiento');
+    ok(u0.status === 200 && u0.json.chat.n >= 1 && u0.json.chat.bytes > 0 && u0.json.retencionDias === 180, 'el panel de almacenamiento cuenta los archivos del chat');
+    ok((await call('GET', '/api/admin/almacenamiento', undefined, { nocookie: true, headers: { cookie: vend } })).status === 403, 'el vendedor no ve el almacenamiento');
+    ok((await call('PATCH', '/api/ajustes', { retencionDias: 7 })).status === 400, 'una retención rara se rechaza');
+    ok((await call('PATCH', '/api/ajustes', { retencionDias: 90 })).status === 200 && (await call('GET', '/api/admin/almacenamiento')).json.retencionDias === 90, 'se guarda cuánto tiempo conservar los archivos');
+    ok((await call('POST', '/api/admin/almacenamiento/limpiar', { dias: 90 })).json.borrados === 0, 'limpiar con 90 días no toca archivos recientes');
+    ok((await call('POST', '/api/admin/almacenamiento/limpiar', { dias: 0 })).status === 400, 'borrar todo exige confirmación');
+    const lp = await call('POST', '/api/admin/almacenamiento/limpiar', { dias: 0, confirmar: true });
+    ok(lp.status === 200 && lp.json.borrados >= 1 && lp.json.uso.chat.n === 0, 'limpiar todo borra los archivos del chat');
+    const stF = (await call('GET', '/api/state')).json;
+    const carF = stF.leads.find((l) => l.nombre === 'Carlos Rojas');
+    const msgs = (await call('GET', `/api/leads/${carF.id}/mensajes`)).json.mensajes || [];
+    ok(msgs.some((m) => (m.adjuntos || []).some((a) => a.borrado === true)), 'el mensaje se conserva marcado como archivo eliminado');
+  }
   if (process.env.LIC_PRIV) {
     console.log('Licencia de uso');
     const { sign, createPrivateKey } = await import('node:crypto');

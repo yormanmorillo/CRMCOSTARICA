@@ -178,6 +178,26 @@ create table if not exists actividad (
   creado timestamptz not null default now()
 );
 create index if not exists actividad_lead_idx on actividad (lead_id, n);
+create table if not exists lead_etapas (
+  n bigserial primary key,
+  lead_id text not null references leads(id) on delete cascade,
+  etapa text not null,
+  entrada timestamptz not null default now()
+);
+create index if not exists lead_etapas_lead_idx on lead_etapas (lead_id, n);
+create or replace function lead_etapa_hist() returns trigger as $fn$
+begin
+  if tg_op = 'INSERT' or new.etapa is distinct from old.etapa then
+    insert into lead_etapas(lead_id, etapa) values (new.id, new.etapa);
+  end if;
+  return new;
+end
+$fn$ language plpgsql;
+drop trigger if exists lead_etapa_trg on leads;
+create trigger lead_etapa_trg after insert or update of etapa on leads for each row execute function lead_etapa_hist();
+insert into lead_etapas(lead_id, etapa, entrada)
+  select l.id, l.etapa, coalesce(l.etapa_en, now()) from leads l
+  where not exists (select 1 from lead_etapas h where h.lead_id = l.id);
 create table if not exists eventos_cw (
   id serial primary key,
   evento text,

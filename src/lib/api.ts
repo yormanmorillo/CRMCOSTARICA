@@ -7,6 +7,7 @@ import { procesarEvento, registrarRespuesta } from './webhook';
 import { enviarWhatsApp, enviarSocial, fbConfig, probarWhatsApp, procesarMeta, verifyMetaSignature, ventanaWhatsApp, waConfig } from './meta';
 import { route, body, oneOf, mustLead } from './router';
 import { estadoLicencia } from './licencia';
+import { limpiezaAutomatica } from './almacen';
 import './api-admin';
 import './api-canales';
 
@@ -21,7 +22,10 @@ route('POST', '/auth/login', async ({ req }) => {
 
 route('POST', '/auth/logout', async ({ req }) => json({ ok: true }, 200, { 'set-cookie': clearCookie(req) }), { public: true });
 
-route('GET', '/state', async ({ user }) => json(await loadState(user!)));
+route('GET', '/state', async ({ user }) => {
+  limpiezaAutomatica().catch(() => {});
+  return json(await loadState(user!));
+});
 
 /* ---------- Leads ---------- */
 const etiquetasValidas = (v: unknown): string[] => {
@@ -318,6 +322,11 @@ route('PATCH', '/ajustes', async ({ req }) => {
   const b = await body(req);
   if ('negocio' in b) await setSetting('negocio', str(b.negocio, 80) || 'Pulso CRM');
   if ('avisoDias' in b) await setSetting('avisoDias', clamp(b.avisoDias, 0, 90, 5));
+  if ('retencionDias' in b) {
+    const d = Number(b.retencionDias);
+    if (![0, 30, 90, 180, 365].includes(d)) throw new HttpError(400, 'Elige 0, 30, 90, 180 o 365 días');
+    await setSetting('retencionDias', d);
+  }
   for (const [k, canal] of Object.entries(TOGGLES)) if (k in b) await setSetting('canal_' + canal, b[k] ? '1' : '0');
   const st = await getSettings();
   return json({ settings: st, canales: { chatwoot: await canalActivo('chatwoot'), whatsapp: await canalActivo('whatsapp'), meta: await canalActivo('meta'), web: await canalActivo('web') } });

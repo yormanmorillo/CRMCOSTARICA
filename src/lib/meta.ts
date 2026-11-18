@@ -1,5 +1,6 @@
 import { createHmac } from 'node:crypto';
 import { q } from './db';
+import { optimizarImagen } from './almacen';
 import { HttpError, digits, hoyCR, safeEqual, toDate, uid } from './util';
 import { tipoYPais } from './chatwoot';
 import { ETAPA_INICIAL_SQL, canalActivo, logAct } from './leads';
@@ -226,8 +227,9 @@ async function recibirWa(m: any, nombre: string): Promise<string> {
       continue;
     }
     const id = uid();
-    await q('insert into medios(id, lead_id, mime, nombre, data) values($1,$2,$3,$4,$5)', [id, lead.id, r.mime, med.nombre, r.data.toString('base64')]);
-    adjuntos.push({ type: med.tipo, url: `/api/medios/${id}`, name: med.nombre || '', mime: r.mime });
+    const o = await optimizarImagen(r.mime, r.data);
+    await q('insert into medios(id, lead_id, mime, nombre, data) values($1,$2,$3,$4,$5)', [id, lead.id, o.mime, med.nombre, o.data.toString('base64')]);
+    adjuntos.push({ type: med.tipo, url: `/api/medios/${id}`, name: med.nombre || '', mime: o.mime });
   }
 
   const ins = await q(
@@ -362,8 +364,9 @@ async function recibirSocial(canal: CanalSocial, ev: any): Promise<string> {
       continue;
     }
     const id = uid();
-    await q('insert into medios(id, lead_id, mime, nombre, data) values($1,$2,$3,$4,$5)', [id, lead.id, r.mime, a.nombre, r.data.toString('base64')]);
-    adjuntos.push({ type: a.tipo, url: `/api/medios/${id}`, name: a.nombre, mime: r.mime });
+    const o = await optimizarImagen(r.mime, r.data);
+    await q('insert into medios(id, lead_id, mime, nombre, data) values($1,$2,$3,$4,$5)', [id, lead.id, o.mime, a.nombre, o.data.toString('base64')]);
+    adjuntos.push({ type: a.tipo, url: `/api/medios/${id}`, name: a.nombre, mime: o.mime });
   }
   const ins = await q(
     `insert into mensajes(id, lead_id, meta_id, direccion, texto, autor, adjuntos, creado)
